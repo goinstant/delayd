@@ -2,13 +2,14 @@ package main
 
 import (
 	"log"
+	"time"
 
 	"github.com/BurntSushi/toml"
 	"github.com/streadway/amqp"
 )
 
 type AmqpConfig struct {
-	Url string
+	Url   string
 	Queue string
 }
 
@@ -57,6 +58,22 @@ func main() {
 			log.Fatal("AMQP Consumption failed!")
 		}
 
-		log.Println("Got message: ", msg)
+		entry := Entry{}
+
+		delay := msg.Headers["vulliamy-delay"].(int64)
+		if !ok {
+			log.Println("Bad/missing delay. discarding message")
+			continue
+		}
+
+		entry.SendAt = time.Now().Add(time.Duration(delay) * time.Millisecond)
+		entry.Body = msg.Body
+		log.Println("Got entry: ", entry)
+
+		go func() {
+			timer := time.NewTimer(time.Duration(delay) * time.Millisecond)
+			_ = <-timer.C
+			log.Println("Sending entry: ", entry)
+		}()
 	}
 }
