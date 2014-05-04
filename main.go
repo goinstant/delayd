@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
-	"github.com/streadway/amqp"
 )
 
 type AmqpConfig struct {
@@ -25,53 +24,24 @@ func main() {
 		log.Fatal("Unable to read config file: ", err)
 	}
 
-	connection, err := amqp.Dial(config.Amqp.Url)
+	r, err := NewAmqpReceiver(config.Amqp.Url, config.Amqp.Queue)
 	if err != nil {
-		log.Fatal("Could not connect to AMQP: ", err)
+		log.Fatal("Could not initialize receiver: ", err)
 	}
 
-	defer connection.Close()
-
-	channel, err := connection.Channel()
-	if err != nil {
-		log.Fatal("Could not open AMQP channel: ", err)
-	}
-
-	queue, err := channel.QueueDeclare(config.Amqp.Queue, true, false, false, false, nil)
-	if err != nil {
-		log.Fatal("Could not declare AMQP Queue: ", err)
-	}
-
-	// XXX set Qos here to match incoming concurrency
-	// XXX make the true (autoAck) false, and ack after done.
-	messages, err := channel.Consume(queue.Name, "vulliamy", true, false, false, false, nil)
-	if err != nil {
-		log.Fatal("Could not set up queue consume: ", err)
-	}
-
-	log.Println("Connected to AMQP")
+	defer r.Close()
 
 	for {
-		msg, ok := <-messages
+		entry, ok := <-r.C
 		// XXX cleanup needed here before exit
 		if !ok {
-			log.Fatal("AMQP Consumption failed!")
+			log.Fatal("Receiver Consumption failed!")
 		}
 
-		entry := Entry{}
-
-		delay := msg.Headers["vulliamy-delay"].(int64)
-		if !ok {
-			log.Println("Bad/missing delay. discarding message")
-			continue
-		}
-
-		entry.SendAt = time.Now().Add(time.Duration(delay) * time.Millisecond)
-		entry.Body = msg.Body
 		log.Println("Got entry: ", entry)
 
 		go func() {
-			timer := time.NewTimer(time.Duration(delay) * time.Millisecond)
+			timer := time.NewTimer(entry.SendAt.Sub(time.Now()))
 			_ = <-timer.C
 			log.Println("Sending entry: ", entry)
 		}()
