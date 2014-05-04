@@ -41,6 +41,7 @@ func main() {
 		log.Fatal("Could not declare AMQP Queue: ", err)
 	}
 
+	// XXX set Qos here to match incoming concurrency
 	// XXX make the true (autoAck) false, and ack after done.
 	messages, err := channel.Consume(queue.Name, "vulliamy", true, false, false, false, nil)
 	if err != nil {
