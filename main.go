@@ -8,8 +8,9 @@ import (
 )
 
 type AmqpConfig struct {
-	Url   string
-	Queue string
+	Url      string
+	Queue    string
+	Exchange string
 }
 
 type Config struct {
@@ -31,6 +32,11 @@ func main() {
 
 	defer r.Close()
 
+	s, err := NewAmqpSender(config.Amqp.Url, config.Amqp.Exchange)
+	if err != nil {
+		log.Fatal("Could not initialize sender: ", err)
+	}
+
 	for {
 		entry, ok := <-r.C
 		// XXX cleanup needed here before exit
@@ -44,6 +50,7 @@ func main() {
 			timer := time.NewTimer(entry.SendAt.Sub(time.Now()))
 			_ = <-timer.C
 			log.Println("Sending entry: ", entry)
+			s.C <- entry
 		}()
 	}
 }

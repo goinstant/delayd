@@ -7,33 +7,42 @@ import (
 	"github.com/streadway/amqp"
 )
 
-type AmqpReceiver struct {
-	C chan struct {
-		Entry
-		bool
-	}
-	rawC <-chan amqp.Delivery
-
+type amqpBase struct {
 	connection *amqp.Connection
 	channel    *amqp.Channel
 }
 
-func (a AmqpReceiver) Close() {
-	a.channel.Close()
+func (a amqpBase) Close() {
+	a.connection.Close()
 }
 
-func NewAmqpReceiver(amqpUrl string, amqpQueue string) (receiver AmqpReceiver, err error) {
-	receiver = AmqpReceiver{}
-
-	receiver.connection, err = amqp.Dial(amqpUrl)
+func (a *amqpBase) dial(amqpUrl string) (err error) {
+	a.connection, err = amqp.Dial(amqpUrl)
 	if err != nil {
 		log.Println("Could not connect to AMQP: ", err)
 		return
 	}
 
-	receiver.channel, err = receiver.connection.Channel()
+	a.channel, err = a.connection.Channel()
 	if err != nil {
 		log.Println("Could not open AMQP channel: ", err)
+		return
+	}
+
+	return
+}
+
+type AmqpReceiver struct {
+	amqpBase
+	C    <-chan Entry
+	rawC <-chan amqp.Delivery
+}
+
+func NewAmqpReceiver(amqpUrl string, amqpQueue string) (receiver AmqpReceiver, err error) {
+	receiver = AmqpReceiver{}
+
+	err = receiver.dial(amqpUrl)
+	if err != nil {
 		return
 	}
 
@@ -53,10 +62,8 @@ func NewAmqpReceiver(amqpUrl string, amqpQueue string) (receiver AmqpReceiver, e
 		return
 	}
 
-	receiver.C = make(chan struct {
-		Entry
-		bool
-	})
+	c := make(chan Entry)
+	receiver.C = c
 
 	go func() {
 		for {
@@ -65,10 +72,7 @@ func NewAmqpReceiver(amqpUrl string, amqpQueue string) (receiver AmqpReceiver, e
 
 			// XXX cleanup needed here before exit
 			if !ok {
-				receiver.C <- struct {
-					Entry
-					bool
-				}{entry, ok}
+				close(c)
 			}
 
 			delay, ok := msg.Headers["vulliamy-delay"].(int64)
@@ -80,10 +84,49 @@ func NewAmqpReceiver(amqpUrl string, amqpQueue string) (receiver AmqpReceiver, e
 			entry.SendAt = time.Now().Add(time.Duration(delay) * time.Millisecond)
 			entry.Body = msg.Body
 
-			receiver.C <- struct {
-				Entry
-				bool
-			}{entry, ok}
+			c <- entry
+		}
+	}()
+
+	return
+}
+
+type AmqpSender struct {
+	amqpBase
+
+	C chan<- Entry
+}
+
+func NewAmqpSender(amqpUrl string, amqpExchange string) (sender AmqpSender, err error) {
+	sender = AmqpSender{}
+
+	err = sender.dial(amqpUrl)
+	if err != nil {
+		return
+	}
+
+	// XXX take exchange options from config?
+	// XXX declare exchange too?
+
+	c := make(chan Entry)
+	sender.C = c
+
+	go func() {
+		for {
+			entry := <-c
+
+			msg := amqp.Publishing{
+				DeliveryMode: amqp.Persistent,
+				Timestamp:    time.Now(),
+				ContentType:  "text/plain",
+				Body:         entry.Body,
+			}
+
+			err = sender.channel.Publish(amqpExchange, "vulliamy", true, false, msg)
+			if err != nil {
+				// XXX proper cleanup
+				log.Fatalf("publish failed: ", err)
+			}
 		}
 	}()
 
