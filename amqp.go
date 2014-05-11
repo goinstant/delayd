@@ -16,8 +16,8 @@ func (a amqpBase) Close() {
 	a.connection.Close()
 }
 
-func (a *amqpBase) dial(amqpUrl string) (err error) {
-	a.connection, err = amqp.Dial(amqpUrl)
+func (a *amqpBase) dial(amqpURL string) (err error) {
+	a.connection, err = amqp.Dial(amqpURL)
 	if err != nil {
 		log.Println("Could not connect to AMQP: ", err)
 		return
@@ -38,10 +38,10 @@ type AmqpReceiver struct {
 	rawC <-chan amqp.Delivery
 }
 
-func NewAmqpReceiver(amqpUrl string, amqpQueue string) (receiver AmqpReceiver, err error) {
+func NewAmqpReceiver(amqpURL string, amqpQueue string) (receiver AmqpReceiver, err error) {
 	receiver = AmqpReceiver{}
 
-	err = receiver.dial(amqpUrl)
+	err = receiver.dial(amqpURL)
 	if err != nil {
 		return
 	}
@@ -97,10 +97,10 @@ type AmqpSender struct {
 	C chan<- Entry
 }
 
-func NewAmqpSender(amqpUrl string, amqpExchange string) (sender AmqpSender, err error) {
+func NewAmqpSender(amqpURL string, amqpExchange string) (sender AmqpSender, err error) {
 	sender = AmqpSender{}
 
-	err = sender.dial(amqpUrl)
+	err = sender.dial(amqpURL)
 	if err != nil {
 		return
 	}
@@ -125,7 +125,7 @@ func NewAmqpSender(amqpUrl string, amqpExchange string) (sender AmqpSender, err 
 			err = sender.channel.Publish(amqpExchange, "vulliamy", true, false, msg)
 			if err != nil {
 				// XXX proper cleanup
-				log.Fatalf("publish failed: ", err)
+				log.Fatal("publish failed: ", err)
 			}
 		}
 	}()

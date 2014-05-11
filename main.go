@@ -8,7 +8,7 @@ import (
 )
 
 type AmqpConfig struct {
-	Url      string
+	URL      string
 	Queue    string
 	Exchange string
 }
@@ -25,14 +25,14 @@ func main() {
 		log.Fatal("Unable to read config file: ", err)
 	}
 
-	r, err := NewAmqpReceiver(config.Amqp.Url, config.Amqp.Queue)
+	r, err := NewAmqpReceiver(config.Amqp.URL, config.Amqp.Queue)
 	if err != nil {
 		log.Fatal("Could not initialize receiver: ", err)
 	}
 
 	defer r.Close()
 
-	s, err := NewAmqpSender(config.Amqp.Url, config.Amqp.Exchange)
+	s, err := NewAmqpSender(config.Amqp.URL, config.Amqp.Exchange)
 	if err != nil {
 		log.Fatal("Could not initialize sender: ", err)
 	}
