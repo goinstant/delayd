@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/gob"
 	"log"
 	"time"
 
@@ -37,12 +39,10 @@ func main() {
 		log.Fatal("Could not initialize sender: ", err)
 	}
 
-	raft, err := configureRaft()
+	raft, err := configureRaft(s)
 	if err != nil {
 		log.Fatal("Could not initialize raft: ", err)
 	}
-
-	log.Println(raft.Stats())
 
 	for {
 		entry, ok := <-r.C
@@ -52,12 +52,15 @@ func main() {
 		}
 
 		log.Println("Got entry: ", entry)
+		var buf bytes.Buffer
+		enc := gob.NewEncoder(&buf)
+		err = enc.Encode(entry)
+		if err != nil {
+			log.Println("Error encoding entry", err)
+			continue
+		}
 
-		go func() {
-			timer := time.NewTimer(entry.SendAt.Sub(time.Now()))
-			_ = <-timer.C
-			log.Println("Sending entry: ", entry)
-			s.C <- entry
-		}()
+		// a generous 60 seconds to apply this command
+		raft.Apply(buf.Bytes(), time.Duration(60)*time.Second)
 	}
 }
