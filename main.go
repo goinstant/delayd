@@ -37,6 +37,13 @@ func main() {
 		log.Fatal("Could not initialize sender: ", err)
 	}
 
+	raft, err := configureRaft()
+	if err != nil {
+		log.Fatal("Could not initialize raft: ", err)
+	}
+
+	log.Println(raft.Stats())
+
 	for {
 		entry, ok := <-r.C
 		// XXX cleanup needed here before exit
