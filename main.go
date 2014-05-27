@@ -20,10 +20,10 @@ type Config struct {
 }
 
 func main() {
-	log.Println("Starting vulliamy")
+	log.Println("Starting delayd")
 
 	var config Config
-	if _, err := toml.DecodeFile("vulliamy.toml", &config); err != nil {
+	if _, err := toml.DecodeFile("delayd.toml", &config); err != nil {
 		log.Fatal("Unable to read config file: ", err)
 	}
 

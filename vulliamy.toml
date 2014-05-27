@@ -1,4 +1,0 @@
-[amqp]
-url = "amqp://localhost"
-queue = "vulliamy"
-exchange = "vulliamy-out"

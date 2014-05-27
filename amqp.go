@@ -56,7 +56,7 @@ func NewAmqpReceiver(amqpURL string, amqpQueue string) (receiver AmqpReceiver, e
 
 	//XXX set Qos here to match incoming concurrency
 	//XXX make the true (autoAck) false, and ack after done.
-	messages, err := receiver.channel.Consume(queue.Name, "vulliamy", true, false, false, false, nil)
+	messages, err := receiver.channel.Consume(queue.Name, "delayd", true, false, false, false, nil)
 	if err != nil {
 		log.Println("Could not set up queue consume: ", err)
 		return
@@ -75,7 +75,7 @@ func NewAmqpReceiver(amqpURL string, amqpQueue string) (receiver AmqpReceiver, e
 				close(c)
 			}
 
-			delay, ok := msg.Headers["vulliamy-delay"].(int64)
+			delay, ok := msg.Headers["delayd-delay"].(int64)
 			if !ok {
 				log.Println("Bad/missing delay. discarding message")
 				continue
@@ -122,7 +122,7 @@ func NewAmqpSender(amqpURL string, amqpExchange string) (sender AmqpSender, err 
 				Body:         entry.Body,
 			}
 
-			err = sender.channel.Publish(amqpExchange, "vulliamy", true, false, msg)
+			err = sender.channel.Publish(amqpExchange, "delayd", true, false, msg)
 			if err != nil {
 				// XXX proper cleanup
 				log.Fatal("publish failed: ", err)
