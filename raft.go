@@ -13,7 +13,8 @@ import (
 )
 
 type FSM struct {
-	s AmqpSender
+	send  AmqpSender
+	store *Storage
 }
 
 func (fsm *FSM) Apply(l *raft.Log) interface{} {
@@ -28,11 +29,17 @@ func (fsm *FSM) Apply(l *raft.Log) interface{} {
 		return nil
 	}
 
+	err = fsm.store.Add(entry, l.Data)
+	if err != nil {
+		log.Println("Error storing entry", err)
+		return nil
+	}
+
 	go func() {
 		timer := time.NewTimer(entry.SendAt.Sub(time.Now()))
 		_ = <-timer.C
 		log.Println("Sending entry: ", entry)
-		fsm.s.C <- entry
+		fsm.send.C <- entry
 	}()
 
 	return nil
@@ -46,7 +53,7 @@ func (*FSM) Restore(snap io.ReadCloser) error {
 	return nil
 }
 
-func configureRaft(sender AmqpSender) (r *raft.Raft, err error) {
+func configureRaft(sender AmqpSender, storage *Storage) (r *raft.Raft, err error) {
 	fss, err := raft.NewFileSnapshotStore("raft", 1, nil)
 	if err != nil {
 		log.Println("Could not initialize raft snapshot store: ", err)
@@ -67,7 +74,7 @@ func configureRaft(sender AmqpSender) (r *raft.Raft, err error) {
 
 	peers := raft.NewJSONPeers("peers", trans)
 
-	fsm := FSM{sender}
+	fsm := FSM{sender, storage}
 
 	config := raft.DefaultConfig()
 	config.EnableSingleNode = true
