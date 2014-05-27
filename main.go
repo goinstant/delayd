@@ -39,12 +39,12 @@ func main() {
 		log.Fatal("Could not initialize sender: ", err)
 	}
 
-	storage, err := NewStorage()
+	storage, err := NewStorage(s)
 	if err != nil {
 		log.Fatal("Could not initialize storage backend: ", err)
 	}
 
-	raft, err := configureRaft(s, storage)
+	raft, err := configureRaft(storage)
 	if err != nil {
 		log.Fatal("Could not initialize raft: ", err)
 	}
