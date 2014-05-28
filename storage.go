@@ -36,18 +36,22 @@ func NewStorage(send AmqpSender) (s *Storage, err error) {
 		return
 	}
 
+	// XXX deal with getting and deleting values with duplicate keys.
 	err = s.env.Open(storageDir, 0, 0755)
 	if err != nil {
 		return
 	}
 
-	t, err := s.nextTime()
+	s.timer = time.NewTimer(time.Duration(24) * time.Hour)
+
+	ok, t, err := s.nextTime()
 	if err != nil {
 		return
 	}
 
-	s.timer = time.NewTimer(time.Duration(24) * time.Hour)
-	s.resetTimer(t)
+	if ok {
+		s.resetTimer(t)
+	}
 
 	go func() {
 		for {
@@ -62,13 +66,22 @@ func NewStorage(send AmqpSender) (s *Storage, err error) {
 			log.Printf("Sending %d entries\n", len(entries))
 			for _, e := range entries {
 				s.send.C <- e
+				err = s.remove(e)
+				if err != nil {
+					// XXX abort comitting for raft here, so it can retry.
+					log.Fatal("Could not remove entry from db: ", err)
+				}
 			}
 
-			t, err = s.nextTime()
+			ok, t, err = s.nextTime()
 			if err != nil {
 				log.Fatal("Could not read next time from db: ", err)
 			}
-			s.resetTimer(t)
+
+			s.timerRunning = false
+			if ok {
+				s.resetTimer(t)
+			}
 		}
 	}()
 
@@ -158,7 +171,8 @@ func (s *Storage) get(t time.Time) (entries []Entry, err error) {
 }
 
 // get the next entry send time from the db
-func (s *Storage) nextTime() (t time.Time, err error) {
+func (s *Storage) nextTime() (ok bool, t time.Time, err error) {
+	ok = true
 	txn, err := s.env.BeginTxn(nil, mdb.RDONLY)
 	if err != nil {
 		log.Println("Error creating transaction: ", err)
@@ -181,6 +195,11 @@ func (s *Storage) nextTime() (t time.Time, err error) {
 	defer cursor.Close()
 
 	k, _, err := cursor.Get(nil, mdb.FIRST)
+	if err == mdb.NotFound {
+		err = nil
+		ok = false
+		return
+	}
 	if err != nil {
 		log.Println("Error reading next time from db: ", err)
 		return
@@ -189,6 +208,30 @@ func (s *Storage) nextTime() (t time.Time, err error) {
 	t = time.Unix(0, int64(bytesToUint64(k)))
 
 	return
+}
+
+// Remove an emitted entry from the db
+func (s *Storage) remove(e Entry) error {
+	txn, err := s.env.BeginTxn(nil, 0)
+	if err != nil {
+		return err
+	}
+
+	dbi, err := txn.DBIOpen(nil, 0)
+	if err != nil {
+		return err
+	}
+
+	k := uint64ToBytes(uint64(e.SendAt.UnixNano()))
+
+	err = txn.Del(dbi, k, nil)
+	if err != nil {
+		return err
+	}
+
+	txn.Commit()
+
+	return nil
 }
 
 func (s *Storage) resetTimer(t time.Time) {
