@@ -81,6 +81,22 @@ func NewAmqpReceiver(amqpURL string, amqpQueue string) (receiver AmqpReceiver, e
 				continue
 			}
 
+			// optional headers that will be relayed
+			h, ok := msg.Headers["content-type"].(string)
+			if ok {
+				entry.ContentType = h
+			}
+
+			h, ok = msg.Headers["content-encoding"].(string)
+			if ok {
+				entry.ContentEncoding = h
+			}
+
+			h, ok = msg.Headers["correlation-id"].(string)
+			if ok {
+				entry.CorrelationId = h
+			}
+
 			entry.SendAt = time.Now().Add(time.Duration(delay) * time.Millisecond)
 			entry.Body = msg.Body
 
@@ -116,10 +132,12 @@ func NewAmqpSender(amqpURL string, amqpExchange string) (sender AmqpSender, err 
 			entry := <-c
 
 			msg := amqp.Publishing{
-				DeliveryMode: amqp.Persistent,
-				Timestamp:    time.Now(),
-				ContentType:  "text/plain",
-				Body:         entry.Body,
+				DeliveryMode:    amqp.Persistent,
+				Timestamp:       time.Now(),
+				ContentType:     entry.ContentType,
+				ContentEncoding: entry.ContentEncoding,
+				CorrelationId:   entry.CorrelationId,
+				Body:            entry.Body,
 			}
 
 			err = sender.channel.Publish(amqpExchange, "delayd-out", true, false, msg)
