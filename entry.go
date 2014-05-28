@@ -4,6 +4,7 @@ import "time"
 
 type Entry struct {
 	SendAt time.Time
+	Target string
 	Body   []byte
 
 	// XXX amqp specific

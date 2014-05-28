@@ -1,4 +1,3 @@
 [amqp]
 url = "amqp://localhost"
 queue = "delayd"
-exchange = "delayd-out"

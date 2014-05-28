@@ -80,6 +80,13 @@ func NewAmqpReceiver(amqpURL string, amqpQueue string) (receiver AmqpReceiver, e
 				log.Println("Bad/missing delay. discarding message")
 				continue
 			}
+			entry.SendAt = time.Now().Add(time.Duration(delay) * time.Millisecond)
+
+			entry.Target, ok = msg.Headers["delayd-target"].(string)
+			if !ok {
+				log.Println("Bad/missing target. discarding message")
+				continue
+			}
 
 			// optional headers that will be relayed
 			h, ok := msg.Headers["content-type"].(string)
@@ -97,7 +104,6 @@ func NewAmqpReceiver(amqpURL string, amqpQueue string) (receiver AmqpReceiver, e
 				entry.CorrelationId = h
 			}
 
-			entry.SendAt = time.Now().Add(time.Duration(delay) * time.Millisecond)
 			entry.Body = msg.Body
 
 			c <- entry
@@ -113,7 +119,7 @@ type AmqpSender struct {
 	C chan<- Entry
 }
 
-func NewAmqpSender(amqpURL string, amqpExchange string) (sender AmqpSender, err error) {
+func NewAmqpSender(amqpURL string) (sender AmqpSender, err error) {
 	sender = AmqpSender{}
 
 	err = sender.dial(amqpURL)
@@ -140,7 +146,7 @@ func NewAmqpSender(amqpURL string, amqpExchange string) (sender AmqpSender, err 
 				Body:            entry.Body,
 			}
 
-			err = sender.channel.Publish(amqpExchange, "delayd-out", true, false, msg)
+			err = sender.channel.Publish(entry.Target, "", true, false, msg)
 			if err != nil {
 				// XXX proper cleanup
 				log.Fatal("publish failed: ", err)
