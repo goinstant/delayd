@@ -122,7 +122,7 @@ func NewAmqpSender(amqpURL string, amqpExchange string) (sender AmqpSender, err 
 				Body:         entry.Body,
 			}
 
-			err = sender.channel.Publish(amqpExchange, "delayd", true, false, msg)
+			err = sender.channel.Publish(amqpExchange, "delayd-out", true, false, msg)
 			if err != nil {
 				// XXX proper cleanup
 				log.Fatal("publish failed: ", err)
