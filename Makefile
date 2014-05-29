@@ -3,3 +3,6 @@ default:
 
 clean:
 	rm -f delayd
+
+deps:
+	go get -d -v ./...
