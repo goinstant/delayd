@@ -191,7 +191,7 @@ func (s *Storage) Add(e Entry, r []byte) (err error) {
 			}
 
 			var oe Entry
-			oe, err = entryFromGob(oeb)
+			oe, err = entryFromBytes(oeb)
 			if err != nil {
 				txn.Abort()
 				return
@@ -271,7 +271,7 @@ func (s *Storage) get(t time.Time) (entries []Entry, err error) {
 			panic(err)
 		}
 
-		entry, err := entryFromGob(v)
+		entry, err := entryFromBytes(v)
 		if err != nil {
 			// XXX don't panic
 			panic(err)
@@ -321,21 +321,32 @@ func (s *Storage) innerRemove(txn *mdb.Txn, dbis []mdb.DBI, e Entry) (err error)
 
 	uuid, err := txn.Get(dbis[0], k)
 	if err != nil {
+		log.Println("Could not read uuid: ", err)
 		return
 	}
 
 	err = txn.Del(dbis[0], k, nil)
 	if err != nil {
+		log.Println("Could not delete from time series: ", err)
 		return
 	}
 
 	err = txn.Del(dbis[1], uuid, nil)
 	if err != nil {
+		log.Println("Could not delete entry: ", err)
+		return
+	}
+
+	// check if the key exists before deleting. ignore any errors here, but catch them on delete
+	b, err := txn.Get(dbis[2], []byte(e.Key))
+	if b == nil {
+		err = nil
 		return
 	}
 
 	err = txn.Del(dbis[2], []byte(e.Key), nil)
 	if err != nil {
+		log.Println("Could not delete from keys: ", err)
 		return
 	}
 

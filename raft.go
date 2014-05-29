@@ -1,13 +1,10 @@
 package main
 
 import (
-	"bytes"
 	"io"
 	"log"
 	"net"
 	"time"
-
-	"encoding/gob"
 
 	"github.com/hashicorp/raft"
 )
@@ -19,10 +16,7 @@ type FSM struct {
 func (fsm *FSM) Apply(l *raft.Log) interface{} {
 	log.Println("Applying log ", l)
 
-	entry := Entry{}
-
-	dec := gob.NewDecoder(bytes.NewBuffer(l.Data))
-	err := dec.Decode(&entry)
+	entry, err := entryFromBytes(l.Data)
 	if err != nil {
 		log.Println("Error decoding entry", err)
 		return nil

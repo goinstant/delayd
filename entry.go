@@ -1,10 +1,12 @@
 package main
 
 import (
-	"bytes"
-	"encoding/gob"
 	"time"
+
+	"github.com/ugorji/go/codec"
 )
+
+var mh codec.MsgpackHandle
 
 type Entry struct {
 	// Required
@@ -21,8 +23,14 @@ type Entry struct {
 	CorrelationId   string
 }
 
-func entryFromGob(b []byte) (e Entry, err error) {
-	dec := gob.NewDecoder(bytes.NewBuffer(b))
+func entryFromBytes(b []byte) (e Entry, err error) {
+	dec := codec.NewDecoderBytes(b, &mh)
 	err = dec.Decode(&e)
+	return
+}
+
+func (e Entry) ToBytes() (b []byte, err error) {
+	enc := codec.NewEncoderBytes(&b, &mh)
+	err = enc.Encode(e)
 	return
 }

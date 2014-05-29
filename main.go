@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bytes"
-	"encoding/gob"
 	"log"
 	"time"
 
@@ -56,15 +54,13 @@ func main() {
 		}
 
 		log.Println("Got entry: ", entry)
-		var buf bytes.Buffer
-		enc := gob.NewEncoder(&buf)
-		err = enc.Encode(entry)
+		b, err := entry.ToBytes()
 		if err != nil {
 			log.Println("Error encoding entry", err)
 			continue
 		}
 
 		// a generous 60 seconds to apply this command
-		raft.Apply(buf.Bytes(), time.Duration(60)*time.Second)
+		raft.Apply(b, time.Duration(60)*time.Second)
 	}
 }
