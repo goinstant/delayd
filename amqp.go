@@ -88,8 +88,14 @@ func NewAmqpReceiver(amqpURL string, amqpQueue string) (receiver AmqpReceiver, e
 				continue
 			}
 
+			// optional key value for overwrite
+			h, ok := msg.Headers["delayd-key"].(string)
+			if ok {
+				entry.Key = h
+			}
+
 			// optional headers that will be relayed
-			h, ok := msg.Headers["content-type"].(string)
+			h, ok = msg.Headers["content-type"].(string)
 			if ok {
 				entry.ContentType = h
 			}
