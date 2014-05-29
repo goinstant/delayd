@@ -1,10 +1,8 @@
 package main
 
 import (
-	"bytes"
 	"crypto/rand"
 	"encoding/binary"
-	"encoding/gob"
 	"errors"
 	"io"
 	"log"
@@ -162,26 +160,69 @@ func (s *Storage) abortTxn(txn *mdb.Txn, dbis []mdb.DBI) {
 }
 
 func (s *Storage) Add(e Entry, r []byte) (err error) {
-	txn, dbis, err := s.startTxn(false, timeDB, entryDB)
+	uuid, err := newUUID()
+	if err != nil {
+		return
+	}
+
+	txn, dbis, err := s.startTxn(false, timeDB, entryDB, keyDB)
 	if err != nil {
 		return
 	}
 	defer s.closeDBIs(dbis)
 
-	uuid, err := newUUID()
-	if err != nil {
-		txn.Abort()
-		return
+	if e.Key != "" {
+		log.Println("Entry has key: ", e.Key)
+
+		var ouuid []byte
+		ouuid, err = txn.Get(dbis[2], []byte(e.Key))
+		if err != nil && err != mdb.NotFound {
+			txn.Abort()
+			return
+		}
+
+		if err == nil {
+			log.Println("Exising key found; removing.")
+			var oeb []byte
+			oeb, err = txn.Get(dbis[1], ouuid)
+			if err != nil {
+				txn.Abort()
+				return
+			}
+
+			var oe Entry
+			oe, err = entryFromGob(oeb)
+			if err != nil {
+				txn.Abort()
+				return
+			}
+
+			err = s.innerRemove(txn, dbis, oe)
+			if err != nil {
+				txn.Abort()
+				return
+			}
+		}
+
+		err = txn.Put(dbis[2], []byte(e.Key), uuid, 0)
+		if err != nil {
+			txn.Abort()
+			return
+		}
 	}
 
 	k := uint64ToBytes(uint64(e.SendAt.UnixNano()))
-
 	err = txn.Put(dbis[0], k, uuid, 0)
 	if err != nil {
 		txn.Abort()
 		return
 	}
+
 	err = txn.Put(dbis[1], uuid, r, 0)
+	if err != nil {
+		txn.Abort()
+		return
+	}
 
 	if !s.timerRunning || e.SendAt.Before(s.nextSend) {
 		s.resetTimer(e.SendAt)
@@ -230,9 +271,7 @@ func (s *Storage) get(t time.Time) (entries []Entry, err error) {
 			panic(err)
 		}
 
-		entry := Entry{}
-		dec := gob.NewDecoder(bytes.NewBuffer(v))
-		err = dec.Decode(&entry)
+		entry, err := entryFromGob(v)
 		if err != nil {
 			// XXX don't panic
 			panic(err)
@@ -277,14 +316,7 @@ func (s *Storage) nextTime() (ok bool, t time.Time, err error) {
 	return
 }
 
-// Remove an emitted entry from the db
-func (s *Storage) remove(e Entry) (err error) {
-	txn, dbis, err := s.startTxn(false, timeDB, entryDB)
-	if err != nil {
-		return
-	}
-	defer s.closeDBIs(dbis)
-
+func (s *Storage) innerRemove(txn *mdb.Txn, dbis []mdb.DBI, e Entry) (err error) {
 	k := uint64ToBytes(uint64(e.SendAt.UnixNano()))
 
 	uuid, err := txn.Get(dbis[0], k)
@@ -302,7 +334,29 @@ func (s *Storage) remove(e Entry) (err error) {
 		return
 	}
 
-	err = txn.Commit()
+	err = txn.Del(dbis[2], []byte(e.Key), nil)
+	if err != nil {
+		return
+	}
+
+	return
+}
+
+// Remove an emitted entry from the db
+func (s *Storage) remove(e Entry) (err error) {
+	txn, dbis, err := s.startTxn(false, timeDB, entryDB, keyDB)
+	if err != nil {
+		return
+	}
+	defer s.closeDBIs(dbis)
+
+	err = s.innerRemove(txn, dbis, e)
+	if err != nil {
+		txn.Abort()
+		return
+	}
+
+	txn.Commit()
 	return
 }
 
