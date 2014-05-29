@@ -2,9 +2,11 @@ package main
 
 import (
 	"log"
+	"os"
 	"time"
 
 	"github.com/BurntSushi/toml"
+	"github.com/codegangsta/cli"
 )
 
 type AmqpConfig struct {
@@ -16,11 +18,11 @@ type Config struct {
 	Amqp AmqpConfig
 }
 
-func main() {
+func execute(c *cli.Context) {
 	log.Println("Starting delayd")
 
 	var config Config
-	if _, err := toml.DecodeFile("delayd.toml", &config); err != nil {
+	if _, err := toml.DecodeFile(c.String("config"), &config); err != nil {
 		log.Fatal("Unable to read config file: ", err)
 	}
 
@@ -63,4 +65,15 @@ func main() {
 		// a generous 60 seconds to apply this command
 		raft.Apply(b, time.Duration(60)*time.Second)
 	}
+}
+
+func main() {
+	app := cli.NewApp()
+	app.Name = "delayd"
+	app.Usage = "available setTimeout()"
+	app.Action = execute
+	app.Flags = []cli.Flag{
+		cli.StringFlag{"config, c", "/etc/delayd.toml", "config file"},
+	}
+	app.Run(os.Args)
 }
