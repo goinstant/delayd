@@ -10,7 +10,7 @@ import (
 	"path"
 	"time"
 
-	"github.com/szferi/gomdb"
+	"github.com/armon/gomdb"
 )
 
 const (
@@ -142,7 +142,7 @@ func (s *Storage) startTxn(readonly bool, open ...string) (*mdb.Txn, []mdb.DBI, 
 
 	var dbs []mdb.DBI
 	for _, name := range open {
-		dbi, err := txn.DBIOpen(&name, dbiFlags)
+		dbi, err := txn.DBIOpen(name, dbiFlags)
 		if err != nil {
 			txn.Abort()
 			return nil, nil, err
