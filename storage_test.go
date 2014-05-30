@@ -16,6 +16,35 @@ func (s StubSender) Send(e Entry) error {
 	return nil
 }
 
+func TestNewStorageSetsTimer(t *testing.T) {
+	dir, err := ioutil.TempDir("", "delayd-test")
+	assert.Nil(t, err)
+	defer os.Remove(dir)
+
+	// create a storage instance to populate the db with an entry
+	s, err := NewStorage(dir, StubSender{})
+	assert.Nil(t, err)
+
+	assert.False(t, s.timerRunning)
+
+	e := Entry{
+		Target: "something",
+		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
+	}
+
+	err = s.Add(e)
+	assert.Nil(t, err)
+
+	s.Close()
+
+	// create a storage instance to populate the db with an entry
+	s, err = NewStorage(dir, StubSender{})
+	defer s.Close()
+
+	assert.Nil(t, err)
+	assert.True(t, s.timerRunning)
+}
+
 func innerTestAdd(t *testing.T, e Entry) {
 	dir, err := ioutil.TempDir("", "delayd-test")
 	assert.Nil(t, err)
