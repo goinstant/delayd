@@ -2,3 +2,12 @@ language: go
 go: 1.2
 install: make deps
 script: make test
+notifications:
+  hipchat:
+    rooms:
+      secure: PwcW7SXs7YbTBe/KSRDcBYh9Mz0cxUCq0oeIi4VA7Ns4i+YPBaX2BKN+4SzBpeyG26JYieyCZ6lBxYVq2K+XOZN/kFSu+LrvX5lz6aE5MstLzfjtkBQogel8k5iJsMDD427cDoXjWlSaD43XPah7TA1fJ5cCVE1PWH6NfkxGvOg=
+    template:
+      - '<img src="https://db.tt/6rDHiSoi">&nbsp;(%{repository_slug})&nbsp;<a
+      href="%{build_url}">%{branch}</a> - <a href="%{compare_url}">%{commit}</a> :
+      %{message}'
+    format: html
