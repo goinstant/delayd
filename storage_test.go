@@ -124,3 +124,59 @@ func TestRemoveWithKey(t *testing.T) {
 	}
 	innerTestRemove(t, e)
 }
+
+func TestRemoveEntryNotFound(t *testing.T) {
+	dir, err := ioutil.TempDir("", "delayd-test")
+	assert.Nil(t, err)
+	defer os.Remove(dir)
+
+	s, err := NewStorage(dir, StubSender{})
+	assert.Nil(t, err)
+	defer s.Close()
+
+	e := Entry{
+		Target: "something",
+		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
+	}
+
+	err = s.remove(e)
+	assert.Error(t, err)
+}
+
+func TestNextTime(t *testing.T) {
+	dir, err := ioutil.TempDir("", "delayd-test")
+	assert.Nil(t, err)
+	defer os.Remove(dir)
+
+	s, err := NewStorage(dir, StubSender{})
+	assert.Nil(t, err)
+	defer s.Close()
+
+	e := Entry{
+		Target: "something",
+		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
+		Key:    "user-key",
+	}
+
+	err = s.Add(e)
+	assert.Nil(t, err)
+
+	ok, ts, err := s.nextTime()
+	assert.Nil(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, ts, e.SendAt)
+}
+
+func TestNextTimeNoEntries(t *testing.T) {
+	dir, err := ioutil.TempDir("", "delayd-test")
+	assert.Nil(t, err)
+	defer os.Remove(dir)
+
+	s, err := NewStorage(dir, StubSender{})
+	assert.Nil(t, err)
+	defer s.Close()
+
+	ok, _, err := s.nextTime()
+	assert.Nil(t, err)
+	assert.False(t, ok)
+}
