@@ -7,6 +7,6 @@ notifications:
     rooms:
       secure: XZ5eI1a6GqOLXktFAp6Uz4SrxH35OhwyHh3Pp4AlqixR/Xm9734pUKmFSMK4BoDRGIi5gE3kQw3QhON7BNOMIzXXvHnnFe3yWyPM9b/0SdPnAgpbRZdnaqAulEF7LR9+NEaC+sRFpTTv8D6u0k12lOq9CWerk1RcAnBv6Zu0uDc=
     template:
-    - '<img src="https://db.tt/6rDHiSoi">&nbsp;(%{repository_slug})&nbsp;<a href="%{build_url}">%{branch}</a>
+    - '<img src="https://db.tt/K0gEyZVh">&nbsp;(%{repository_slug})&nbsp;<a href="%{build_url}">%{branch}</a>
       - <a href="%{compare_url}">%{commit}</a> : %{message}'
     format: html
