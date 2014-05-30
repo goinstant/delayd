@@ -33,7 +33,6 @@ func innerTestAdd(t *testing.T, e Entry) {
 
 	assert.Equal(t, len(entries), 1)
 	assert.Equal(t, entries[0], e)
-
 }
 
 func TestAddNoKey(t *testing.T) {
@@ -51,6 +50,41 @@ func TestAddWithKey(t *testing.T) {
 		Key:    "user-key",
 	}
 	innerTestAdd(t, e)
+}
+
+func TestAddWithKeyReplacesExisting(t *testing.T) {
+	e := Entry{
+		Target: "something",
+		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
+		Key:    "user-key",
+	}
+
+	e2 := Entry{
+		Target: "something-else",
+		SendAt: time.Now().Add(time.Duration(110) * time.Minute),
+		Key:    "user-key",
+	}
+
+	dir, err := ioutil.TempDir("", "delayd-test")
+	assert.Nil(t, err)
+	defer os.Remove(dir)
+
+	s, err := NewStorage(dir, StubSender{})
+	assert.Nil(t, err)
+	defer s.Close()
+
+	err = s.Add(e)
+	assert.Nil(t, err)
+
+	err = s.Add(e2)
+	assert.Nil(t, err)
+
+	// since e is before e2, this would return both.
+	entries, err := s.get(e2.SendAt)
+	assert.Nil(t, err)
+
+	assert.Equal(t, len(entries), 1)
+	assert.Equal(t, entries[0], e2)
 }
 
 func innerTestRemove(t *testing.T, e Entry) {

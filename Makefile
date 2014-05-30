@@ -15,3 +15,8 @@ test:
 
 cover:
 	go test -cover ./...
+
+htmlcov:
+	# has to use the full package name for me
+	go test -coverprofile /tmp/delayd-coverprof.cov github.com/goinstant/delayd
+	go tool cover -html /tmp/delayd-coverprof.cov
