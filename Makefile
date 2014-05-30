@@ -1,4 +1,4 @@
-DEPS = $(go list -f '{{range .TestImports}}{{.}} {{end}}' ./...)
+DEPS = $(shell go list -f '{{range .TestImports}}{{.}} {{end}}' ./...)
 
 default:
 	go build
