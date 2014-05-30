@@ -4,24 +4,14 @@ import (
 	"log"
 	"os"
 
-	"github.com/BurntSushi/toml"
 	"github.com/codegangsta/cli"
 )
-
-type AmqpConfig struct {
-	URL   string
-	Queue string
-}
-
-type Config struct {
-	Amqp AmqpConfig
-}
 
 func execute(c *cli.Context) {
 	log.Println("Starting delayd")
 
-	var config Config
-	if _, err := toml.DecodeFile(c.String("config"), &config); err != nil {
+	config, err := loadConfig(c)
+	if err != nil {
 		log.Fatal("Unable to read config file: ", err)
 	}
 
