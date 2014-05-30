@@ -21,14 +21,14 @@ const (
 type Storage struct {
 	env  *mdb.Env
 	dbi  *mdb.DBI
-	send AmqpSender
+	send Sender
 
 	timerRunning bool
 	timer        *time.Timer
 	nextSend     time.Time
 }
 
-func NewStorage(send AmqpSender) (s *Storage, err error) {
+func NewStorage(send Sender) (s *Storage, err error) {
 	s = new(Storage)
 	s.send = send
 
@@ -100,7 +100,11 @@ func (s *Storage) startTimerLoop() {
 
 		log.Printf("Sending %d entries\n", len(entries))
 		for _, e := range entries {
-			s.send.C <- e
+			err = s.send.Send(e)
+			if err != nil {
+				log.Fatal("Could not send entry: ", err)
+			}
+
 			err = s.remove(e)
 			if err != nil {
 				// XXX abort comitting for raft here, so it can retry.
@@ -159,7 +163,7 @@ func (s *Storage) abortTxn(txn *mdb.Txn, dbis []mdb.DBI) {
 	s.closeDBIs(dbis)
 }
 
-func (s *Storage) Add(e Entry, r []byte) (err error) {
+func (s *Storage) Add(e Entry) (err error) {
 	uuid, err := newUUID()
 	if err != nil {
 		return
@@ -218,7 +222,13 @@ func (s *Storage) Add(e Entry, r []byte) (err error) {
 		return
 	}
 
-	err = txn.Put(dbis[1], uuid, r, 0)
+	b, err := e.ToBytes()
+	if err != nil {
+		txn.Abort()
+		return
+	}
+
+	err = txn.Put(dbis[1], uuid, b, 0)
 	if err != nil {
 		txn.Abort()
 		return

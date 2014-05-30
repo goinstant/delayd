@@ -136,29 +136,19 @@ func NewAmqpSender(amqpURL string) (sender AmqpSender, err error) {
 	// XXX take exchange options from config?
 	// XXX declare exchange too?
 
-	c := make(chan Entry)
-	sender.C = c
+	return
+}
 
-	go func() {
-		for {
-			entry := <-c
+func (s AmqpSender) Send(e Entry) (err error) {
+	msg := amqp.Publishing{
+		DeliveryMode:    amqp.Persistent,
+		Timestamp:       time.Now(),
+		ContentType:     e.ContentType,
+		ContentEncoding: e.ContentEncoding,
+		CorrelationId:   e.CorrelationID,
+		Body:            e.Body,
+	}
 
-			msg := amqp.Publishing{
-				DeliveryMode:    amqp.Persistent,
-				Timestamp:       time.Now(),
-				ContentType:     entry.ContentType,
-				ContentEncoding: entry.ContentEncoding,
-				CorrelationId:   entry.CorrelationID,
-				Body:            entry.Body,
-			}
-
-			err = sender.channel.Publish(entry.Target, "", true, false, msg)
-			if err != nil {
-				// XXX proper cleanup
-				log.Fatal("publish failed: ", err)
-			}
-		}
-	}()
-
+	err = s.channel.Publish(e.Target, "", true, false, msg)
 	return
 }
