@@ -122,8 +122,8 @@ func (s *Storage) startTimerLoop() {
 
 // startTxn is used to start a transaction and open all the associated sub-databases
 func (s *Storage) startTxn(readonly bool, open ...string) (*mdb.Txn, []mdb.DBI, error) {
-	var txnFlags uint = 0
-	var dbiFlags uint = 0
+	var txnFlags uint
+	var dbiFlags uint
 	if readonly {
 		txnFlags |= mdb.RDONLY
 	} else {

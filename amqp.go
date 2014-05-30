@@ -107,7 +107,7 @@ func NewAmqpReceiver(amqpURL string, amqpQueue string) (receiver AmqpReceiver, e
 
 			h, ok = msg.Headers["correlation-id"].(string)
 			if ok {
-				entry.CorrelationId = h
+				entry.CorrelationID = h
 			}
 
 			entry.Body = msg.Body
@@ -148,7 +148,7 @@ func NewAmqpSender(amqpURL string) (sender AmqpSender, err error) {
 				Timestamp:       time.Now(),
 				ContentType:     entry.ContentType,
 				ContentEncoding: entry.ContentEncoding,
-				CorrelationId:   entry.CorrelationId,
+				CorrelationId:   entry.CorrelationID,
 				Body:            entry.Body,
 			}
 

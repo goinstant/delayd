@@ -20,7 +20,7 @@ type Entry struct {
 	// XXX amqp specific
 	ContentEncoding string
 	ContentType     string
-	CorrelationId   string
+	CorrelationID   string
 }
 
 func entryFromBytes(b []byte) (e Entry, err error) {
