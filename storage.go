@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path"
 	"time"
 
 	"github.com/szferi/gomdb"
@@ -28,7 +29,7 @@ type Storage struct {
 	nextSend     time.Time
 }
 
-func NewStorage(send Sender) (s *Storage, err error) {
+func NewStorage(prefix string, send Sender) (s *Storage, err error) {
 	s = new(Storage)
 	s.send = send
 
@@ -37,7 +38,7 @@ func NewStorage(send Sender) (s *Storage, err error) {
 		return
 	}
 
-	storageDir := "db"
+	storageDir := path.Join(prefix, "db")
 	err = os.MkdirAll(storageDir, 0755)
 	if err != nil {
 		return

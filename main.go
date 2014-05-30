@@ -38,7 +38,8 @@ func execute(c *cli.Context) {
 		log.Fatal("Could not initialize sender: ", err)
 	}
 
-	storage, err := NewStorage(s)
+	// XXX read storage dir from config
+	storage, err := NewStorage("delayd-data", s)
 	if err != nil {
 		log.Fatal("Could not initialize storage backend: ", err)
 	}

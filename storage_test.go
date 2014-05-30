@@ -1,6 +1,8 @@
 package main
 
 import (
+	"io/ioutil"
+	"os"
 	"testing"
 	"time"
 
@@ -15,13 +17,17 @@ func (s StubSender) Send(e Entry) error {
 }
 
 func TestAdd(t *testing.T) {
+	dir, err := ioutil.TempDir("", "delayd-test")
+	assert.Nil(t, err)
+	defer os.Remove(dir)
+
+	s, err := NewStorage(dir, StubSender{})
+	assert.Nil(t, err)
+
 	e := Entry{
 		Target: "something",
 		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
 	}
-
-	s, err := NewStorage(StubSender{})
-	assert.Nil(t, err)
 
 	err = s.Add(e)
 	assert.Nil(t, err)
