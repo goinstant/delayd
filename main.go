@@ -3,7 +3,6 @@ package main
 import (
 	"log"
 	"os"
-	"time"
 
 	"github.com/BurntSushi/toml"
 	"github.com/codegangsta/cli"
@@ -26,46 +25,8 @@ func execute(c *cli.Context) {
 		log.Fatal("Unable to read config file: ", err)
 	}
 
-	r, err := NewAmqpReceiver(config.Amqp.URL, config.Amqp.Queue)
-	if err != nil {
-		log.Fatal("Could not initialize receiver: ", err)
-	}
-
-	defer r.Close()
-
-	s, err := NewAmqpSender(config.Amqp.URL)
-	if err != nil {
-		log.Fatal("Could not initialize sender: ", err)
-	}
-
-	// XXX read storage dir from config
-	storage, err := NewStorage("delayd-data", s)
-	if err != nil {
-		log.Fatal("Could not initialize storage backend: ", err)
-	}
-
-	raft, err := configureRaft(storage)
-	if err != nil {
-		log.Fatal("Could not initialize raft: ", err)
-	}
-
-	for {
-		entry, ok := <-r.C
-		// XXX cleanup needed here before exit
-		if !ok {
-			log.Fatal("Receiver Consumption failed!")
-		}
-
-		log.Println("Got entry: ", entry)
-		b, err := entry.ToBytes()
-		if err != nil {
-			log.Println("Error encoding entry", err)
-			continue
-		}
-
-		// a generous 60 seconds to apply this command
-		raft.Apply(b, time.Duration(60)*time.Second)
-	}
+	s := Server{}
+	s.Run(config)
 }
 
 func main() {
