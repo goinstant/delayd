@@ -11,4 +11,4 @@ deps:
 	echo $(DEPS) | xargs -n1 go get -d -v
 
 test:
-	go test -v
+	go test ./...
