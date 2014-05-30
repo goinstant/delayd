@@ -348,10 +348,20 @@ func (s *Storage) innerRemove(txn *mdb.Txn, dbis []mdb.DBI, e Entry) (err error)
 		return
 	}
 
-	// check if the key exists before deleting. ignore any errors here, but catch them on delete
-	b, err := txn.Get(dbis[2], []byte(e.Key))
-	if b == nil {
+	// check if the key exists before deleting.
+	cursor, err := txn.CursorOpen(dbis[2])
+	if err != nil {
+		log.Println("Error getting cursor: ", err)
+		return
+	}
+	defer cursor.Close()
+
+	_, _, err = cursor.Get([]byte(e.Key), mdb.FIRST)
+	if err == mdb.NotFound {
 		err = nil
+		return
+	} else if err != nil {
+		log.Println("Error reading cursor: ", err)
 		return
 	}
 
