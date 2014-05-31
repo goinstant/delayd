@@ -42,6 +42,8 @@ func (*FSM) Restore(snap io.ReadCloser) error {
 	return nil
 }
 
+// XXX see https://github.com/hashicorp/consul/blob/master/consul/server.go#L394
+// for graceful raft shutdown
 func configureRaft(prefix string, storage *Storage) (r *raft.Raft, err error) {
 	fss, err := raft.NewFileSnapshotStore("raft", 1, nil)
 	if err != nil {
