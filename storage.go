@@ -57,15 +57,14 @@ func NewStorage(prefix string, send Sender) (s *Storage, err error) {
 	}
 
 	// Initialize sub dbs
-	txn, dbis, err := s.startTxn(false, timeDB, entryDB)
+	txn, _, err := s.startTxn(false, timeDB, entryDB)
 	if err != nil {
-		s.abortTxn(txn, dbis)
+		txn.Abort()
 		return
 	}
 
 	err = txn.Commit()
 	if err != nil {
-		s.closeDBIs(dbis)
 		return
 	}
 
@@ -153,17 +152,6 @@ func (s *Storage) startTxn(readonly bool, open ...string) (*mdb.Txn, []mdb.DBI, 
 	return txn, dbs, nil
 }
 
-func (s *Storage) closeDBIs(dbis []mdb.DBI) {
-	for _, dbi := range dbis {
-		s.env.DBIClose(dbi)
-	}
-}
-
-func (s *Storage) abortTxn(txn *mdb.Txn, dbis []mdb.DBI) {
-	txn.Abort()
-	s.closeDBIs(dbis)
-}
-
 func (s *Storage) Add(e Entry) (err error) {
 	uuid, err := newUUID()
 	if err != nil {
@@ -174,7 +162,6 @@ func (s *Storage) Add(e Entry) (err error) {
 	if err != nil {
 		return
 	}
-	defer s.closeDBIs(dbis)
 
 	if e.Key != "" {
 		log.Println("Entry has key: ", e.Key)
@@ -249,7 +236,7 @@ func (s *Storage) get(t time.Time) (entries []Entry, err error) {
 		log.Println("Error creating transaction: ", err)
 		return
 	}
-	defer s.abortTxn(txn, dbis)
+	defer txn.Abort()
 
 	cursor, err := txn.CursorOpen(dbis[0])
 	if err != nil {
@@ -302,7 +289,7 @@ func (s *Storage) nextTime() (ok bool, t time.Time, err error) {
 		log.Println("Error creating transaction: ", err)
 		return
 	}
-	defer s.abortTxn(txn, dbis)
+	defer txn.Abort()
 
 	cursor, err := txn.CursorOpen(dbis[0])
 	if err != nil {
@@ -380,7 +367,6 @@ func (s *Storage) remove(e Entry) (err error) {
 	if err != nil {
 		return
 	}
-	defer s.closeDBIs(dbis)
 
 	err = s.innerRemove(txn, dbis, e)
 	if err != nil {
