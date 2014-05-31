@@ -253,7 +253,7 @@ func (s *Storage) get(t time.Time) (entries []Entry, err error) {
 
 	cursor, err := txn.CursorOpen(dbis[0])
 	if err != nil {
-		log.Println("Error getting cursor: ", err)
+		log.Println("Error getting cursor for get entry: ", err)
 		return
 	}
 	defer cursor.Close()
@@ -306,7 +306,7 @@ func (s *Storage) nextTime() (ok bool, t time.Time, err error) {
 
 	cursor, err := txn.CursorOpen(dbis[0])
 	if err != nil {
-		log.Println("Error getting cursor: ", err)
+		log.Println("Error getting cursor for next time: ", err)
 		return
 	}
 	defer cursor.Close()
@@ -351,7 +351,7 @@ func (s *Storage) innerRemove(txn *mdb.Txn, dbis []mdb.DBI, e Entry) (err error)
 	// check if the key exists before deleting.
 	cursor, err := txn.CursorOpen(dbis[2])
 	if err != nil {
-		log.Println("Error getting cursor: ", err)
+		log.Println("Error getting cursor for keys: ", err)
 		return
 	}
 	defer cursor.Close()
