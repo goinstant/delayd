@@ -29,7 +29,7 @@ func (s *Server) Run(c Config) {
 		log.Fatal("Could not initialize storage backend: ", err)
 	}
 
-	raft, err := configureRaft(storage)
+	raft, err := configureRaft("delayd-data", storage)
 	if err != nil {
 		log.Fatal("Could not initialize raft: ", err)
 	}

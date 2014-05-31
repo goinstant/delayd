@@ -4,13 +4,16 @@ import (
 	"io"
 	"log"
 	"net"
+	"path"
 	"time"
 
 	"github.com/hashicorp/raft"
+	"github.com/hashicorp/raft-mdb"
 )
 
 type FSM struct {
-	store *Storage
+	store    *Storage
+	mdbStore *raftmdb.MDBStore
 }
 
 func (fsm *FSM) Apply(l *raft.Log) interface{} {
@@ -39,7 +42,7 @@ func (*FSM) Restore(snap io.ReadCloser) error {
 	return nil
 }
 
-func configureRaft(storage *Storage) (r *raft.Raft, err error) {
+func configureRaft(prefix string, storage *Storage) (r *raft.Raft, err error) {
 	fss, err := raft.NewFileSnapshotStore("raft", 1, nil)
 	if err != nil {
 		log.Println("Could not initialize raft snapshot store: ", err)
@@ -60,12 +63,19 @@ func configureRaft(storage *Storage) (r *raft.Raft, err error) {
 
 	peers := raft.NewJSONPeers("peers", trans)
 
-	fsm := FSM{storage}
+	raftDir := path.Join(prefix, "raft")
+	mdbStore, err := raftmdb.NewMDBStore(raftDir)
+	if err != nil {
+		log.Println("Could not create raft store: ", err)
+		return
+	}
+
+	fsm := FSM{storage, mdbStore}
 
 	config := raft.DefaultConfig()
 	config.EnableSingleNode = true
 
-	r, err = raft.NewRaft(config, &fsm, raft.NewInmemStore(), raft.NewInmemStore(), fss, peers, trans)
+	r, err = raft.NewRaft(config, &fsm, mdbStore, mdbStore, fss, peers, trans)
 	if err != nil {
 		log.Println("Could not initialize raft: ", err)
 		return
