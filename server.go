@@ -31,7 +31,6 @@ func (s *Server) Run(c Config) {
 		log.Fatal("Could not initialize sender: ", err)
 	}
 
-	// XXX read storage dir from config
 	storage, err := NewStorage(c.DataDir, sender)
 	if err != nil {
 		log.Fatal("Could not initialize storage backend: ", err)
