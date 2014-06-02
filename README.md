@@ -14,8 +14,14 @@ make test # run unit tests
 make      # build the executable
 ```
 
-### Running
+## Running
 
 ```bash
 ./delayd -c delayd.toml
 ```
+
+## License
+&copy; 2014 GoInstant Inc., a salesforce.com company. Licensed under the BSD
+3-clause license.
+
+[![GoInstant](http://goinstant.com/static/img/logo.png)](http://goinstant.com)
