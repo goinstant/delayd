@@ -4,6 +4,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"os"
 	"path"
 	"time"
 
@@ -45,7 +46,14 @@ func (*FSM) Restore(snap io.ReadCloser) error {
 // XXX see https://github.com/hashicorp/consul/blob/master/consul/server.go#L394
 // for graceful raft shutdown
 func configureRaft(prefix string, storage *Storage) (r *raft.Raft, err error) {
-	fss, err := raft.NewFileSnapshotStore("raft", 1, nil)
+	raftDir := path.Join(prefix, "raft")
+
+	err = os.MkdirAll(raftDir, 0755)
+	if err != nil {
+		log.Fatal("Could not create raft storage dir: ", err)
+	}
+
+	fss, err := raft.NewFileSnapshotStore(raftDir, 1, nil)
 	if err != nil {
 		log.Println("Could not initialize raft snapshot store: ", err)
 		return
@@ -65,7 +73,6 @@ func configureRaft(prefix string, storage *Storage) (r *raft.Raft, err error) {
 
 	peers := raft.NewJSONPeers("peers", trans)
 
-	raftDir := path.Join(prefix, "raft")
 	mdbStore, err := raftmdb.NewMDBStore(raftDir)
 	if err != nil {
 		log.Println("Could not create raft store: ", err)

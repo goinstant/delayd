@@ -1,3 +1,5 @@
+data_dir = "/var/lib/delayd"
+
 [amqp]
 url = "amqp://localhost"
 queue = "delayd"

@@ -6,7 +6,8 @@ import (
 )
 
 type Config struct {
-	Amqp AmqpConfig
+	Amqp    AmqpConfig
+	DataDir string `toml:"data_dir"`
 }
 
 type AmqpConfig struct {
