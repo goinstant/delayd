@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"os"
 	"time"
 )
 
@@ -23,13 +24,19 @@ func (s *Server) Run(c Config) {
 		log.Fatal("Could not initialize sender: ", err)
 	}
 
+	dataDir := "delayd-data"
+	err = os.MkdirAll(dataDir, 0755)
+	if err != nil {
+		log.Fatal("Could not create data storage dir: ", err)
+	}
+
 	// XXX read storage dir from config
-	storage, err := NewStorage("delayd-data", sender)
+	storage, err := NewStorage(dataDir, sender)
 	if err != nil {
 		log.Fatal("Could not initialize storage backend: ", err)
 	}
 
-	raft, err := configureRaft("delayd-data", storage)
+	raft, err := configureRaft(dataDir, storage)
 	if err != nil {
 		log.Fatal("Could not initialize raft: ", err)
 	}
