@@ -43,9 +43,14 @@ func (*FSM) Restore(snap io.ReadCloser) error {
 	return nil
 }
 
-// XXX see https://github.com/hashicorp/consul/blob/master/consul/server.go#L394
-// for graceful raft shutdown
-func configureRaft(prefix string, storage *Storage) (r *raft.Raft, err error) {
+type Raft struct {
+	transport *raft.NetworkTransport
+	mdb       *raftmdb.MDBStore
+	raft      *raft.Raft
+}
+
+func NewRaft(prefix string, storage *Storage) (r *Raft, err error) {
+	r = new(Raft)
 	raftDir := path.Join(prefix, "raft")
 
 	err = os.MkdirAll(raftDir, 0755)
@@ -65,30 +70,43 @@ func configureRaft(prefix string, storage *Storage) (r *raft.Raft, err error) {
 		return
 	}
 
-	trans, err := raft.NewTCPTransport("0.0.0.0:9999", advertise, 3, 10*time.Second, nil)
+	r.transport, err = raft.NewTCPTransport("0.0.0.0:9999", advertise, 3, 10*time.Second, nil)
 	if err != nil {
 		log.Println("Could not create raft transport: ", err)
 		return
 	}
 
-	peers := raft.NewJSONPeers("peers", trans)
+	peers := raft.NewJSONPeers(raftDir, r.transport)
 
-	mdbStore, err := raftmdb.NewMDBStore(raftDir)
+	r.mdb, err = raftmdb.NewMDBStore(raftDir)
 	if err != nil {
 		log.Println("Could not create raft store: ", err)
 		return
 	}
 
-	fsm := FSM{storage, mdbStore}
+	fsm := FSM{storage, r.mdb}
 
 	config := raft.DefaultConfig()
 	config.EnableSingleNode = true
 
-	r, err = raft.NewRaft(config, &fsm, mdbStore, mdbStore, fss, peers, trans)
+	r.raft, err = raft.NewRaft(config, &fsm, r.mdb, r.mdb, fss, peers, r.transport)
 	if err != nil {
 		log.Println("Could not initialize raft: ", err)
 		return
 	}
 
 	return
+}
+
+func (r *Raft) Close() {
+	r.transport.Close()
+	future := r.raft.Shutdown()
+	if err := future.Error(); err != nil {
+		log.Printf("Error shutting down raft: ", err)
+	}
+	r.mdb.Close()
+}
+
+func (r *Raft) Apply(cmd []byte, timeout time.Duration) {
+	r.raft.Apply(cmd, timeout)
 }
