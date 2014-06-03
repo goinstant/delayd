@@ -23,7 +23,7 @@ func (s *Server) Run(c Config) {
 		log.Fatal("Error creating data dir: ", err)
 	}
 
-	s.receiver, err = NewAmqpReceiver(c.Amqp.URL, c.Amqp.Queue)
+	s.receiver, err = NewAmqpReceiver(c.Amqp)
 	if err != nil {
 		log.Fatal("Could not initialize receiver: ", err)
 	}

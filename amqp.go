@@ -7,17 +7,17 @@ import (
 	"github.com/streadway/amqp"
 )
 
-type amqpBase struct {
+type AmqpBase struct {
 	connection *amqp.Connection
 	channel    *amqp.Channel
 }
 
-func (a amqpBase) Close() {
+func (a AmqpBase) Close() {
 	a.channel.Close()
 	a.connection.Close()
 }
 
-func (a *amqpBase) dial(amqpURL string) (err error) {
+func (a *AmqpBase) dial(amqpURL string) (err error) {
 	a.connection, err = amqp.Dial(amqpURL)
 	if err != nil {
 		log.Println("Could not connect to AMQP: ", err)
@@ -34,30 +34,42 @@ func (a *amqpBase) dial(amqpURL string) (err error) {
 }
 
 type AmqpReceiver struct {
-	amqpBase
+	AmqpBase
 	C    <-chan Entry
 	rawC <-chan amqp.Delivery
 }
 
-func NewAmqpReceiver(amqpURL string, amqpQueue string) (receiver *AmqpReceiver, err error) {
+func NewAmqpReceiver(ac AmqpConfig) (receiver *AmqpReceiver, err error) {
 	receiver = new(AmqpReceiver)
 
-	err = receiver.dial(amqpURL)
+	err = receiver.dial(ac.URL)
 	if err != nil {
 		return
 	}
 
-	// XXX take queue options from config?
-	// XXX declare exchange too?
-	queue, err := receiver.channel.QueueDeclare(amqpQueue, true, false, false, false, nil)
+	err = receiver.channel.ExchangeDeclare(ac.Exchange.Name, ac.Exchange.Kind, ac.Exchange.Durable, ac.Exchange.AutoDelete, ac.Exchange.Internal, ac.Exchange.NoWait, nil)
+	if err != nil {
+		log.Println("Could not declare AMQP Exchange: ", err)
+		return
+	}
+
+	queue, err := receiver.channel.QueueDeclare(ac.Queue.Name, ac.Queue.Durable, ac.Queue.AutoDelete, ac.Queue.Exclusive, ac.Queue.NoWait, nil)
 	if err != nil {
 		log.Println("Could not declare AMQP Queue: ", err)
 		return
 	}
 
+	for _, exch := range ac.Queue.Bind {
+		log.Printf("Binding queue %s to exchange %s", queue.Name, exch)
+		err = receiver.channel.QueueBind(queue.Name, "delayd", exch, ac.Queue.NoWait, nil)
+		if err != nil {
+			log.Fatalf("Error binding queue %s to Exchange %s", queue.Name, exch)
+		}
+	}
+
 	//XXX set Qos here to match incoming concurrency
 	//XXX make the true (autoAck) false, and ack after done.
-	messages, err := receiver.channel.Consume(queue.Name, "delayd", true, false, false, false, nil)
+	messages, err := receiver.channel.Consume(queue.Name, "delayd", ac.Queue.Durable, ac.Queue.AutoDelete, ac.Queue.Exclusive, ac.Queue.NoWait, nil)
 	if err != nil {
 		log.Println("Could not set up queue consume: ", err)
 		return
@@ -121,7 +133,7 @@ func NewAmqpReceiver(amqpURL string, amqpQueue string) (receiver *AmqpReceiver, 
 }
 
 type AmqpSender struct {
-	amqpBase
+	AmqpBase
 
 	C chan<- Entry
 }
