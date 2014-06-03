@@ -102,7 +102,7 @@ func (r *Raft) Close() {
 	r.transport.Close()
 	future := r.raft.Shutdown()
 	if err := future.Error(); err != nil {
-		log.Printf("Error shutting down raft: ", err)
+		log.Println("Error shutting down raft: ", err)
 	}
 	r.mdb.Close()
 }
