@@ -3,6 +3,8 @@ package main
 import (
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/codegangsta/cli"
 )
@@ -16,6 +18,17 @@ func execute(c *cli.Context) {
 	}
 
 	s := Server{}
+
+	// graceful shutdown for ^C and kill
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		for _ = range ch {
+			s.Stop()
+			os.Exit(0)
+		}
+	}()
+
 	s.Run(config)
 }
 

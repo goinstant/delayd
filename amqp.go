@@ -13,6 +13,7 @@ type amqpBase struct {
 }
 
 func (a amqpBase) Close() {
+	a.channel.Close()
 	a.connection.Close()
 }
 
@@ -38,8 +39,8 @@ type AmqpReceiver struct {
 	rawC <-chan amqp.Delivery
 }
 
-func NewAmqpReceiver(amqpURL string, amqpQueue string) (receiver AmqpReceiver, err error) {
-	receiver = AmqpReceiver{}
+func NewAmqpReceiver(amqpURL string, amqpQueue string) (receiver *AmqpReceiver, err error) {
+	receiver = new(AmqpReceiver)
 
 	err = receiver.dial(amqpURL)
 	if err != nil {
@@ -70,9 +71,9 @@ func NewAmqpReceiver(amqpURL string, amqpQueue string) (receiver AmqpReceiver, e
 			msg, ok := <-messages
 			entry := Entry{}
 
-			// XXX cleanup needed here before exit
+			// channel was closed. exit
 			if !ok {
-				close(c)
+				return
 			}
 
 			delay, ok := msg.Headers["delayd-delay"].(int64)
@@ -125,8 +126,8 @@ type AmqpSender struct {
 	C chan<- Entry
 }
 
-func NewAmqpSender(amqpURL string) (sender AmqpSender, err error) {
-	sender = AmqpSender{}
+func NewAmqpSender(amqpURL string) (sender *AmqpSender, err error) {
+	sender = new(AmqpSender)
 
 	err = sender.dial(amqpURL)
 	if err != nil {
