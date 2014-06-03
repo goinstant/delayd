@@ -32,7 +32,7 @@ func TestNewStorageSetsTimer(t *testing.T) {
 		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
 	}
 
-	err = s.Add(e)
+	err = s.Add(e, 0)
 	assert.Nil(t, err)
 
 	s.Close()
@@ -54,7 +54,7 @@ func innerTestAdd(t *testing.T, e Entry) {
 	assert.Nil(t, err)
 	defer s.Close()
 
-	err = s.Add(e)
+	err = s.Add(e, 0)
 	assert.Nil(t, err)
 
 	entries, err := s.get(e.SendAt)
@@ -102,10 +102,10 @@ func TestAddWithKeyReplacesExisting(t *testing.T) {
 	assert.Nil(t, err)
 	defer s.Close()
 
-	err = s.Add(e)
+	err = s.Add(e, 0)
 	assert.Nil(t, err)
 
-	err = s.Add(e2)
+	err = s.Add(e2, 0)
 	assert.Nil(t, err)
 
 	// since e is before e2, this would return both.
@@ -114,6 +114,29 @@ func TestAddWithKeyReplacesExisting(t *testing.T) {
 
 	assert.Equal(t, len(entries), 1)
 	assert.Equal(t, entries[0], e2)
+}
+
+func TestAddUpdatesVersion(t *testing.T) {
+	e := Entry{
+		Target: "something",
+		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
+		Key:    "user-key",
+	}
+
+	dir, err := ioutil.TempDir("", "delayd-test")
+	assert.Nil(t, err)
+	defer os.Remove(dir)
+
+	s, err := NewStorage(dir, StubSender{})
+	assert.Nil(t, err)
+	defer s.Close()
+
+	err = s.Add(e, 11)
+	assert.Nil(t, err)
+
+	version, err := s.Version()
+	assert.Nil(t, err)
+	assert.Equal(t, version, uint64(11))
 }
 
 func innerTestRemove(t *testing.T, e Entry) {
@@ -125,7 +148,7 @@ func innerTestRemove(t *testing.T, e Entry) {
 	assert.Nil(t, err)
 	defer s.Close()
 
-	err = s.Add(e)
+	err = s.Add(e, 0)
 	assert.Nil(t, err)
 
 	err = s.remove(e)
@@ -187,7 +210,7 @@ func TestNextTime(t *testing.T) {
 		Key:    "user-key",
 	}
 
-	err = s.Add(e)
+	err = s.Add(e, 0)
 	assert.Nil(t, err)
 
 	ok, ts, err := s.nextTime()
@@ -208,4 +231,18 @@ func TestNextTimeNoEntries(t *testing.T) {
 	ok, _, err := s.nextTime()
 	assert.Nil(t, err)
 	assert.False(t, ok)
+}
+
+func TestVersionReturnsZeroIfNoEntries(t *testing.T) {
+	dir, err := ioutil.TempDir("", "delayd-test")
+	assert.Nil(t, err)
+	defer os.Remove(dir)
+
+	s, err := NewStorage(dir, StubSender{})
+	assert.Nil(t, err)
+	defer s.Close()
+
+	version, err := s.Version()
+	assert.Nil(t, err)
+	assert.Equal(t, version, uint64(0))
 }
