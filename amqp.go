@@ -7,17 +7,33 @@ import (
 	"github.com/streadway/amqp"
 )
 
-type amqpBase struct {
-	connection *amqp.Connection
-	channel    *amqp.Channel
+type Connection interface {
+	Close() error
+	Channel() (c *amqp.Channel, e error)
 }
 
-func (a amqpBase) Close() {
-	a.channel.Close()
-	a.connection.Close()
+type Channel interface {
+	QueueDeclare(name string, durable, autoDelete, exclusive, noWait bool, args amqp.Table) (q amqp.Queue, e error)
+	Consume(name string, consumer string, autoAck, exclusive, noLocal, noWait bool, args amqp.Table) (c <-chan amqp.Delivery, e error)
+	Publish(exchange, key string, mandatory, immediate bool, msg amqp.Publishing) error
+  Close() error
 }
 
-func (a *amqpBase) dial(amqpURL string) (err error) {
+type AmqpBase struct {
+	connection Connection
+	channel    Channel
+}
+
+func (a AmqpBase) Close() {
+  chanError := a.channel.Close()
+  connectionError := a.connection.Close()
+
+  if chanError != nil || connectionError != nil {
+    log.Println("Error closing amqp, chanError:", chanError, ", connectionError:", connectionError)
+  }
+}
+
+func (a *AmqpBase) dial(amqpURL string) (err error) {
 	a.connection, err = amqp.Dial(amqpURL)
 	if err != nil {
 		log.Println("Could not connect to AMQP: ", err)
@@ -34,7 +50,7 @@ func (a *amqpBase) dial(amqpURL string) (err error) {
 }
 
 type AmqpReceiver struct {
-	amqpBase
+	AmqpBase
 	C    <-chan Entry
 	rawC <-chan amqp.Delivery
 }
@@ -121,7 +137,7 @@ func NewAmqpReceiver(amqpURL string, amqpQueue string) (receiver *AmqpReceiver, 
 }
 
 type AmqpSender struct {
-	amqpBase
+	AmqpBase
 
 	C chan<- Entry
 }
