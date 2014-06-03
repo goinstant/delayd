@@ -14,9 +14,12 @@ import (
 )
 
 const (
+	metaDB  = "meta"    // Meta info (schema version, last applied index)
 	timeDB  = "time"    // map of emit time to entry uuid
 	keyDB   = "keys"    // map of user provided key to entry uuid. optional
 	entryDB = "entries" // map of uuid to entry
+
+	schemaVer = 1 // On-disk storage format version
 )
 
 type Storage struct {
@@ -33,6 +36,20 @@ func NewStorage(prefix string, send Sender) (s *Storage, err error) {
 	s = new(Storage)
 	s.send = send
 
+	err = s.initDB(prefix)
+	if err != nil {
+		return
+	}
+
+	err = s.initTimer()
+	if err != nil {
+		return
+	}
+
+	return
+}
+
+func (s *Storage) initDB(prefix string) (err error) {
 	s.env, err = mdb.NewEnv()
 	if err != nil {
 		return
@@ -45,7 +62,7 @@ func NewStorage(prefix string, send Sender) (s *Storage, err error) {
 	}
 
 	// 3 sub dbs: Entries, time index, and key index
-	err = s.env.SetMaxDBs(mdb.DBI(3))
+	err = s.env.SetMaxDBs(mdb.DBI(4))
 	if err != nil {
 		return
 	}
@@ -57,7 +74,14 @@ func NewStorage(prefix string, send Sender) (s *Storage, err error) {
 	}
 
 	// Initialize sub dbs
-	txn, _, err := s.startTxn(false, timeDB, entryDB)
+	txn, dbis, err := s.startTxn(false, metaDB, timeDB, entryDB, keyDB)
+	if err != nil {
+		txn.Abort()
+		return
+	}
+
+	// XXX check version first (once we change it)
+	err = txn.Put(dbis[0], []byte("version"), uint64ToBytes(schemaVer), 0)
 	if err != nil {
 		txn.Abort()
 		return
@@ -68,6 +92,10 @@ func NewStorage(prefix string, send Sender) (s *Storage, err error) {
 		return
 	}
 
+	return
+}
+
+func (s *Storage) initTimer() (err error) {
 	s.timer = time.NewTimer(time.Duration(24) * time.Hour)
 
 	ok, t, err := s.nextTime()
