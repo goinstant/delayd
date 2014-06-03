@@ -22,13 +22,26 @@ func (fsm *FSM) Apply(l *raft.Log) interface{} {
 
 	entry, err := entryFromBytes(l.Data)
 	if err != nil {
-		log.Println("Error decoding entry", err)
+		log.Println("Error decoding entry: ", err)
 		return nil
 	}
 
-	err = fsm.store.Add(entry)
+	version, err := fsm.store.Version()
 	if err != nil {
-		log.Println("Error storing entry", err)
+		log.Println("Error reading version: ", err)
+		return nil
+	}
+
+	// this doesn't strictly check for version + 1 as raft has internal commands
+	// that go on the log, too.
+	if l.Index < version {
+		log.Printf("Skipping apply for old version (did you restart?) existing=%d new=%d\n", version, l.Index)
+		return nil
+	}
+
+	err = fsm.store.Add(entry, l.Index)
+	if err != nil {
+		log.Println("Error storing entry: ", err)
 		return nil
 	}
 

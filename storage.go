@@ -80,8 +80,8 @@ func (s *Storage) initDB(prefix string) (err error) {
 		return
 	}
 
-	// XXX check version first (once we change it)
-	err = txn.Put(dbis[0], []byte("version"), uint64ToBytes(schemaVer), 0)
+	// XXX check schema version first (once we change it)
+	err = txn.Put(dbis[0], []byte("schema"), uint64ToBytes(schemaVer), 0)
 	if err != nil {
 		txn.Abort()
 		return
@@ -180,13 +180,13 @@ func (s *Storage) startTxn(readonly bool, open ...string) (*mdb.Txn, []mdb.DBI, 
 	return txn, dbs, nil
 }
 
-func (s *Storage) Add(e Entry) (err error) {
+func (s *Storage) Add(e Entry, index uint64) (err error) {
 	uuid, err := newUUID()
 	if err != nil {
 		return
 	}
 
-	txn, dbis, err := s.startTxn(false, timeDB, entryDB, keyDB)
+	txn, dbis, err := s.startTxn(false, timeDB, entryDB, keyDB, metaDB)
 	if err != nil {
 		return
 	}
@@ -245,6 +245,12 @@ func (s *Storage) Add(e Entry) (err error) {
 	}
 
 	err = txn.Put(dbis[1], uuid, b, 0)
+	if err != nil {
+		txn.Abort()
+		return
+	}
+
+	err = txn.Put(dbis[3], []byte("version"), uint64ToBytes(index), 0)
 	if err != nil {
 		txn.Abort()
 		return
@@ -414,6 +420,36 @@ func (s *Storage) resetTimer(t time.Time) {
 	s.timerRunning = true
 	s.timer.Reset(t.Sub(time.Now()))
 	s.nextSend = t
+}
+
+// Return the current raft index version as stored in the db.
+// Use this to determine if actions should be performed or not.
+func (s *Storage) Version() (version uint64, err error) {
+	txn, dbis, err := s.startTxn(true, metaDB)
+	if err != nil {
+		log.Println("Error creating transaction: ", err)
+		return
+	}
+	defer txn.Abort()
+
+	cursor, err := txn.CursorOpen(dbis[0])
+	if err != nil {
+		log.Println("Error getting cursor for version: ", err)
+		return
+	}
+	defer cursor.Close()
+
+	_, b, err := cursor.Get([]byte("version"), mdb.SET_KEY)
+	if err == mdb.NotFound {
+		err = nil
+		return
+	} else if err != nil {
+		log.Println("Error reading cursor for version: ", err)
+		return
+	}
+
+	version = bytesToUint64(b)
+	return
 }
 
 // Converts bytes to an integer
