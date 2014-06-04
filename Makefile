@@ -1,6 +1,9 @@
 DEPS = $(shell go list -f '{{range .TestImports}}{{.}} {{end}}' ./...)
 TOOLDEPS = code.google.com/p/go.tools/cmd/vet
+TOOLDEPS += github.com/golang/lint/golint
 
+# GOPATH isn't in bin on travis
+LINT=$(shell echo $$GOPATH | cut -d ":" -f1)/bin/golint
 
 default:
 	go build
@@ -16,10 +19,16 @@ deps:
 test:
 	go test ./...
 
-check:
+check: lint
 	gofmt -l .
 	[ -z "$$(gofmt -l .)" ]
 	go vet
+
+# golint has no options or ways to ignore values, so if we start getting false
+# positives, just take it out of the build flow.
+lint:
+	$(LINT) .
+	[ -z "$$($(LINT) .)" ]
 
 cover:
 	go test -cover ./...

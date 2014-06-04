@@ -7,16 +7,21 @@ import (
 	"github.com/streadway/amqp"
 )
 
+// AmqpBase is the base class for amqp senders and recievers, containing the
+// startup and shutdown logic.
 type AmqpBase struct {
 	connection *amqp.Connection
 	channel    *amqp.Channel
 }
 
+// Close the connection to amqp gracefully. Subclasses should ensure they finish
+// all in-flight processing.
 func (a AmqpBase) Close() {
 	a.channel.Close()
 	a.connection.Close()
 }
 
+// Connect to AMQP, and open a communication channel.
 func (a *AmqpBase) dial(amqpURL string) (err error) {
 	a.connection, err = amqp.Dial(amqpURL)
 	if err != nil {
@@ -33,12 +38,15 @@ func (a *AmqpBase) dial(amqpURL string) (err error) {
 	return
 }
 
+// AmqpReceiver receives delayd commands over amqp
 type AmqpReceiver struct {
 	AmqpBase
 	C    <-chan Entry
 	rawC <-chan amqp.Delivery
 }
 
+// NewAmqpReceiver creates a new AmqpReceiver based on the provided AmqpConfig,
+// and starts it listening for commands.
 func NewAmqpReceiver(ac AmqpConfig) (receiver *AmqpReceiver, err error) {
 	receiver = new(AmqpReceiver)
 
@@ -132,12 +140,14 @@ func NewAmqpReceiver(ac AmqpConfig) (receiver *AmqpReceiver, err error) {
 	return
 }
 
+// AmqpSender sends delayd entries over amqp after their timeout
 type AmqpSender struct {
 	AmqpBase
 
 	C chan<- Entry
 }
 
+// NewAmqpSender creates a new AmqpSender connected to the given AMQP URL.
 func NewAmqpSender(amqpURL string) (sender *AmqpSender, err error) {
 	sender = new(AmqpSender)
 
@@ -152,6 +162,8 @@ func NewAmqpSender(amqpURL string) (sender *AmqpSender, err error) {
 	return
 }
 
+// Send sends a delayd entry over AMQP, using the entry's Target as the publish
+// exchange.
 func (s AmqpSender) Send(e Entry) (err error) {
 	msg := amqp.Publishing{
 		DeliveryMode:    amqp.Persistent,

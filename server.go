@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+// Server is the delayd server. It handles the server lifecycle (startup, clean shutdown)
 type Server struct {
 	sender   *AmqpSender
 	receiver *AmqpReceiver
@@ -13,6 +14,7 @@ type Server struct {
 	raft     *Raft
 }
 
+// Run initializes the Server from a Config, and begins its main loop.
 func (s *Server) Run(c Config) {
 	log.Println("Starting delayd")
 
@@ -62,13 +64,15 @@ func (s *Server) Run(c Config) {
 	}
 }
 
+// Stop shuts down the Server cleanly. Order of the Close calls is important.
 func (s *Server) Stop() {
 	log.Println("Shutting down gracefully.")
 
 	s.receiver.Close()
 	s.storage.Close()
-	s.raft.Close()
 	s.sender.Close()
+
+	s.raft.Close()
 
 	log.Println("Terminated.")
 }
