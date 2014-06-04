@@ -12,16 +12,41 @@ import (
 	"github.com/hashicorp/raft-mdb"
 )
 
+// Command is the command type as stored in the raft log
+type Command uint8
+
+const (
+	addCmd Command = iota
+)
+
+const logSchemaVersion = 0x0
+
 // FSM wraps the Storage instance in the raft.FSM interface, allowing raft to apply commands.
 type FSM struct {
 	store *Storage
 }
 
 // Apply a raft.Log to our Storage instance.
+// Before passing the command to Storage, Apply ensures that both the
+// schema version and command type are present and understood. It panics
+// if not.
 func (fsm *FSM) Apply(l *raft.Log) interface{} {
 	log.Println("Applying log ", l)
 
-	entry, err := entryFromBytes(l.Data)
+	logVer := l.Data[0]
+	if logVer != logSchemaVersion {
+		log.Printf("Unknown log schema version seen. version=%d", logVer)
+		panic("Unknown log schema version!")
+	}
+
+	// Once we have more types, we can do something with them.
+	cmdType := l.Data[1]
+	if cmdType != byte(addCmd) {
+		log.Printf("Unknown command type seen. type=%d", cmdType)
+		panic("Unknown command type!")
+	}
+
+	entry, err := entryFromBytes(l.Data[2:])
 	if err != nil {
 		log.Println("Error decoding entry: ", err)
 		return nil
@@ -127,6 +152,11 @@ func (r *Raft) Close() {
 }
 
 // Apply wraps the internal raft Apply, for encapsulation!
+// Commands sent to raft are prefixed with a header containing two bytes of
+// additional data:
+// - the first byte indicates the schema version of the log entry
+// - the second byte indicates the command type
 func (r *Raft) Apply(cmd []byte, timeout time.Duration) {
-	r.raft.Apply(cmd, timeout)
+	h := []byte{logSchemaVersion, byte(addCmd)}
+	r.raft.Apply(append(h, cmd...), timeout)
 }
