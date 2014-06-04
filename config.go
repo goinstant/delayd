@@ -10,8 +10,12 @@ type AmqpQueue struct {
 	Name string   `toml:"name"`
 	Bind []string `toml:"bind"`
 
-	AutoDelete                 bool `toml:"auto_delete"`
-	Durable, Exclusive, NoWait bool
+	Durable    bool `toml:"durable"`
+	AutoDelete bool `toml:"auto_delete"`
+	AutoAck    bool `toml:"auto_ack"`
+	Exclusive  bool `toml:"exclusive"`
+	NoLocal    bool `toml:"no_local"`
+	NoWait     bool `toml:"no_wait"`
 }
 
 // AmqpExchange holds configuration for the exchange used by the AmqpReceiver
