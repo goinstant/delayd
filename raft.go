@@ -12,11 +12,12 @@ import (
 	"github.com/hashicorp/raft-mdb"
 )
 
+// FSM wraps the Storage instance in the raft.FSM interface, allowing raft to apply commands.
 type FSM struct {
-	store    *Storage
-	mdbStore *raftmdb.MDBStore
+	store *Storage
 }
 
+// Apply a raft.Log to our Storage instance.
 func (fsm *FSM) Apply(l *raft.Log) interface{} {
 	log.Println("Applying log ", l)
 
@@ -48,20 +49,24 @@ func (fsm *FSM) Apply(l *raft.Log) interface{} {
 	return nil
 }
 
+// Snapshot creates a raft snapshot for fast restore.
 func (*FSM) Snapshot() (raft.FSMSnapshot, error) {
 	return nil, nil
 }
 
+// Restore from a raft snapshot
 func (*FSM) Restore(snap io.ReadCloser) error {
 	return nil
 }
 
+// Raft encapsulates the raft specific logic for startup and shutdown.
 type Raft struct {
 	transport *raft.NetworkTransport
 	mdb       *raftmdb.MDBStore
 	raft      *raft.Raft
 }
 
+// NewRaft creates a new Raft instance. raft data is stored under the raft dir in prefix.
 func NewRaft(prefix string, storage *Storage) (r *Raft, err error) {
 	r = new(Raft)
 	raftDir := path.Join(prefix, "raft")
@@ -97,7 +102,7 @@ func NewRaft(prefix string, storage *Storage) (r *Raft, err error) {
 		return
 	}
 
-	fsm := FSM{storage, r.mdb}
+	fsm := FSM{storage}
 
 	config := raft.DefaultConfig()
 	config.EnableSingleNode = true
@@ -111,6 +116,7 @@ func NewRaft(prefix string, storage *Storage) (r *Raft, err error) {
 	return
 }
 
+// Close cleanly shutsdown the raft instance.
 func (r *Raft) Close() {
 	r.transport.Close()
 	future := r.raft.Shutdown()
@@ -120,6 +126,7 @@ func (r *Raft) Close() {
 	r.mdb.Close()
 }
 
+// Apply wraps the internal raft Apply, for encapsulation!
 func (r *Raft) Apply(cmd []byte, timeout time.Duration) {
 	r.raft.Apply(cmd, timeout)
 }

@@ -22,6 +22,8 @@ const (
 	schemaVer = 1 // On-disk storage format version
 )
 
+// Storage is the database backend for persisting Entries via LMDB, and triggering
+// entry emission.
 type Storage struct {
 	env  *mdb.Env
 	dbi  *mdb.DBI
@@ -32,6 +34,8 @@ type Storage struct {
 	nextSend     time.Time
 }
 
+// NewStorage creates a new Storage instance. prefix is the base directory where
+// data is written on-disk.
 func NewStorage(prefix string, send Sender) (s *Storage, err error) {
 	s = new(Storage)
 	s.send = send
@@ -111,7 +115,11 @@ func (s *Storage) initTimer() (err error) {
 	return
 }
 
+// Close gracefully shuts down a storage instance. Before calling it, ensure
+// that all in-flight requests have been processed.
 func (s *Storage) Close() {
+	// XXX This should ensure that all pending storage requests are done, and
+	// block waiting for any events triggered by the timer to complete.
 	s.env.Close()
 	s.timer.Stop()
 }
@@ -180,6 +188,9 @@ func (s *Storage) startTxn(readonly bool, open ...string) (*mdb.Txn, []mdb.DBI, 
 	return txn, dbs, nil
 }
 
+// Add an Entry to the database. index is the raft log entry's index that
+// triggered this add. It is used to ensure we do not apply the same command
+// twice on a restart.
 func (s *Storage) Add(e Entry, index uint64) (err error) {
 	uuid, err := newUUID()
 	if err != nil {
@@ -422,7 +433,7 @@ func (s *Storage) resetTimer(t time.Time) {
 	s.nextSend = t
 }
 
-// Return the current raft index version as stored in the db.
+// Version returns the current raft index version as stored in the db.
 // Use this to determine if actions should be performed or not.
 func (s *Storage) Version() (version uint64, err error) {
 	txn, dbis, err := s.startTxn(true, metaDB)
