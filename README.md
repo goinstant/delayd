@@ -1,6 +1,7 @@
 # Delayd
 
 [![Build Status](https://magnum.travis-ci.com/goinstant/delayd.svg?token=pPAtatqxvKxCP6YPwTxz&branch=master)](https://magnum.travis-ci.com/goinstant/delayd)
+[![BSD License](http://img.shields.io/badge/license-BSD-blue.svg)](https://github.com/goinstant/delayd/blob/master/LICENSE)
 
 ## Developing
 
@@ -9,9 +10,10 @@
 
 To get started:
 ```bash
-make deps # install required modules
-make test # run unit tests
-make      # build the executable
+make deps  # install required modules
+make check # run fmt, vet, lint
+make test  # run unit tests
+make       # build the executable
 ```
 
 ## Running
