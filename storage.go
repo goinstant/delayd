@@ -307,30 +307,31 @@ func (s *Storage) get(t time.Time) (entries []Entry, err error) {
 	log.Println("Looking for: ", t, t.UnixNano())
 
 	for {
-		k, uuid, err := cursor.Get(nil, mdb.NEXT)
+		var k, uuid, v []byte
+		k, uuid, err = cursor.Get(nil, mdb.NEXT)
 		if err == mdb.NotFound {
+			err = nil
 			break
 		}
 		if err != nil {
-			// XXX don't panic
-			panic(err)
+			return
 		}
 
 		kt := bytesToUint64(k)
 		if kt > sk {
+			err = nil
 			break
 		}
 
-		v, err := txn.Get(dbis[1], uuid)
+		v, err = txn.Get(dbis[1], uuid)
 		if err != nil {
-			// XXX don't panic
-			panic(err)
+			return
 		}
 
-		entry, err := entryFromBytes(v)
+		var entry Entry
+		entry, err = entryFromBytes(v)
 		if err != nil {
-			// XXX don't panic
-			panic(err)
+			return
 		}
 
 		entries = append(entries, entry)
