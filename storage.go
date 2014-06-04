@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/armon/gomdb"
+	"github.com/streadway/amqp"
 )
 
 const (
@@ -137,8 +138,20 @@ func (s *Storage) startTimerLoop() {
 		log.Printf("Sending %d entries\n", len(entries))
 		for _, e := range entries {
 			err = s.send.Send(e)
-			if err != nil {
-				log.Fatal("Could not send entry: ", err)
+
+			// error 504 code means that the exchange we were trying
+			// to send on didnt exist.  In the case of delayd this usually
+			// means that a consumer didn't set up the exchange they wish
+			// to be notified on.  We do not attempt to make this for them,
+			// as we don't know what exchange options they would want, we
+			// simply drop this message, other errors are fatal
+
+			if err, ok := err.(*amqp.Error); ok {
+				if err.Code != 504 {
+					log.Fatal("Could not send entry: ", err)
+				} else {
+					log.Printf("channel/connection not set up for exchange `%s`, message will be deleted", e.Target)
+				}
 			}
 
 			err = s.remove(e)
