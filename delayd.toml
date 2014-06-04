@@ -2,4 +2,21 @@ data_dir = "/var/lib/delayd"
 
 [amqp]
 url = "amqp://localhost"
-queue = "delayd"
+
+[amqp.exchange]
+name = "delayd"
+kind = "topic"
+durable = true
+auto_delete = false
+internal = false
+noWait = false
+
+[amqp.queue]
+name = "delayd"
+bind = [ "delayd" ]
+
+durable = true
+auto_delete = false
+exclusive = false
+noWait = false
+# args table is not covered here
