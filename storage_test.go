@@ -136,7 +136,7 @@ func TestAddUpdatesVersion(t *testing.T) {
 
 	version, err := s.Version()
 	assert.Nil(t, err)
-	assert.Equal(t, version, uint64(11))
+	assert.Equal(t, version, 11)
 }
 
 func innerTestRemove(t *testing.T, e Entry) {
@@ -244,5 +244,5 @@ func TestVersionReturnsZeroIfNoEntries(t *testing.T) {
 
 	version, err := s.Version()
 	assert.Nil(t, err)
-	assert.Equal(t, version, uint64(0))
+	assert.Equal(t, version, 0)
 }
