@@ -1,4 +1,5 @@
-DEPS = $(shell go list -f '{{range .TestImports}}{{.}} {{end}}' ./...)
+DEPS = $(shell go list -f '{{range .Imports}}{{.}} {{end}}' ./...)
+TESTDEPS = $(shell go list -f '{{range .TestImports}}{{.}} {{end}}' ./...)
 TOOLDEPS = code.google.com/p/go.tools/cmd/vet
 TOOLDEPS += github.com/golang/lint/golint
 
@@ -13,8 +14,14 @@ clean:
 
 deps:
 	go get -d -v ./...
-	echo $(DEPS) | xargs -n1 go get -d -v
+	echo $(TESTDEPS) | xargs -n1 go get -d -v
 	echo $(TOOLDEPS) | xargs -n1 go get -v
+
+update-deps:
+	echo $(DEPS) | xargs -n1 go get -u -d -v
+	echo $(TESTDEPS) | xargs -n1 go get -u -d -v
+	echo $(TOOLDEPS) | xargs -n1 go get -u -v
+
 
 test:
 	go test ./...
