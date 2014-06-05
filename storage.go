@@ -174,7 +174,7 @@ func (s *Storage) startTimerLoop() {
 }
 
 // startTxn is used to start a transaction and open all the associated sub-databases
-func (s *Storage) startTxn(readonly bool, open ...string) (*mdb.Txn, []mdb.DBI, error) {
+func (s *Storage) startTxn(readonly bool, open ...string) (txn *mdb.Txn, dbis []mdb.DBI, err error) {
 	var txnFlags uint
 	var dbiFlags uint
 	if readonly {
@@ -183,22 +183,22 @@ func (s *Storage) startTxn(readonly bool, open ...string) (*mdb.Txn, []mdb.DBI, 
 		dbiFlags |= mdb.CREATE
 	}
 
-	txn, err := s.env.BeginTxn(nil, txnFlags)
+	txn, err = s.env.BeginTxn(nil, txnFlags)
 	if err != nil {
-		return nil, nil, err
+		return
 	}
 
-	var dbs []mdb.DBI
 	for _, name := range open {
-		dbi, err := txn.DBIOpen(name, dbiFlags)
+		var dbi mdb.DBI
+		dbi, err = txn.DBIOpen(name, dbiFlags)
 		if err != nil {
 			txn.Abort()
-			return nil, nil, err
+			return
 		}
-		dbs = append(dbs, dbi)
+		dbis = append(dbis, dbi)
 	}
 
-	return txn, dbs, nil
+	return
 }
 
 // Add an Entry to the database. index is the raft log entry's index that
