@@ -160,9 +160,6 @@ func NewAmqpSender(amqpURL string) (sender *AmqpSender, err error) {
 		return
 	}
 
-	// XXX take exchange options from config?
-	// XXX declare exchange too?
-
 	return
 }
 
