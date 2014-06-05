@@ -72,7 +72,6 @@ func (s *Storage) initDB(prefix string) (err error) {
 		return
 	}
 
-	// XXX deal with getting and deleting values with duplicate keys.
 	err = s.env.Open(storageDir, 0, 0755)
 	if err != nil {
 		return
