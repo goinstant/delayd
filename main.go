@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"io/ioutil"
 	"log"
 	"os"
 	"os/signal"
@@ -18,9 +19,27 @@ func executeCli(c *cli.Context) {
 		log.Fatal("Unable to read config file: ", err)
 	}
 
-	cli := Client{}
+	cli := Client{
+		exchange: c.String("exchange"),
+		key:      c.String("key"),
+	}
 	cli.stdin = make(chan []byte)
 	go cli.Run(config)
+
+	// we will only stick around reading stdin forever if the user specifies
+	// --repl
+
+	if c.Bool("repl") == false {
+		f := c.String("file")
+		dat, err := ioutil.ReadFile(f)
+		if err != nil {
+			log.Fatalf("Error reading from file: %s, got error: %s", f, err)
+		}
+
+		cli.stdin <- dat
+
+		return
+	}
 
 	log.Println("Waiting for STDIN")
 	bio := bufio.NewReader(os.Stdin)
@@ -67,6 +86,14 @@ func main() {
 		cli.StringFlag{"config, c", "/etc/delayd.toml", "config file"},
 	}
 
+	cliFlags := []cli.Flag{
+		cli.StringFlag{"config, c", "/etc/delayd.toml", "config file"},
+		cli.StringFlag{"exchange, e", "delayd-cli", "response exchange name"},
+		cli.StringFlag{"key, k", "delayd-key", "key to store message under"},
+		cli.BoolFlag{"repl, r", "launch client in REPL mode"},
+		cli.StringFlag{"file, f ", "msg.json", "read message from file"},
+	}
+
 	app.Commands = []cli.Command{
 		{
 			Name:        "server",
@@ -82,7 +109,7 @@ func main() {
 			Usage:       "Spawn a Delayd Client",
 			Description: "CLI for Delayd Server process -- send commands via CLI",
 			Action:      executeCli,
-			Flags:       flags,
+			Flags:       cliFlags,
 		},
 	}
 
