@@ -3,10 +3,42 @@ package main
 import (
 	"time"
 
+	"github.com/streadway/amqp"
 	"github.com/ugorji/go/codec"
 )
 
 var mh codec.MsgpackHandle
+
+// EntryWrapper wraps the Entry object and also attaches the amqp.Delivery
+// object so that we can call Done whenever we want to ACK or NACK the message
+type EntryWrapper struct {
+	Entry Entry
+	Msg   amqp.Delivery
+}
+
+// Done is called whenever the user wants to ACK/NACK a message via amqp.
+// a boolean is passed indicated whether we should ACK or NACK
+func (e *EntryWrapper) Done(succ bool) {
+	// If we cannot ACK a message then we are pretty much stuck, we won't
+	// be able to receive any additional messages
+	pan := func() {
+		panic("Unable to ACK/NACK amqp message")
+	}
+
+	if succ {
+		err := e.Msg.Ack(false)
+		if err != nil {
+			pan()
+		}
+
+		return
+	}
+
+	err := e.Msg.Nack(false, false)
+	if err != nil {
+		pan()
+	}
+}
 
 // Entry represents a delayed message.
 type Entry struct {
