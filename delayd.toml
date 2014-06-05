@@ -16,7 +16,7 @@ name = "delayd"
 bind = [ "delayd" ]
 
 durable = true
-auto_ack = true
+auto_ack = false
 exclusive = false
 no_local = false
 no_wait = false

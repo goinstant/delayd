@@ -46,7 +46,8 @@ func (s *Server) Run(c Config) {
 	}
 
 	for {
-		entry, ok := <-s.receiver.C
+		eWrapper, ok := <-s.receiver.C
+		entry := eWrapper.Entry
 		// XXX cleanup needed here before exit
 		if !ok {
 			log.Fatal("Receiver Consumption failed!")
@@ -61,6 +62,7 @@ func (s *Server) Run(c Config) {
 
 		// a generous 60 seconds to apply this command
 		s.raft.Apply(b, time.Duration(60)*time.Second)
+		eWrapper.Done(true)
 	}
 }
 

@@ -41,7 +41,7 @@ func (a *AmqpBase) dial(amqpURL string) (err error) {
 // AmqpReceiver receives delayd commands over amqp
 type AmqpReceiver struct {
 	AmqpBase
-	C    <-chan Entry
+	C    <-chan EntryWrapper
 	rawC <-chan amqp.Delivery
 }
 
@@ -83,13 +83,15 @@ func NewAmqpReceiver(ac AmqpConfig) (receiver *AmqpReceiver, err error) {
 		return
 	}
 
-	c := make(chan Entry)
+	c := make(chan EntryWrapper)
 	receiver.C = c
 
 	go func() {
 		for {
 			msg, ok := <-messages
 			entry := Entry{}
+
+			eWrapper := EntryWrapper{Msg: msg}
 
 			// channel was closed. exit
 			if !ok {
@@ -99,6 +101,7 @@ func NewAmqpReceiver(ac AmqpConfig) (receiver *AmqpReceiver, err error) {
 			delay, ok := msg.Headers["delayd-delay"].(int64)
 			if !ok {
 				log.Println("Bad/missing delay. discarding message")
+				eWrapper.Done(false)
 				continue
 			}
 			entry.SendAt = time.Now().Add(time.Duration(delay) * time.Millisecond)
@@ -106,6 +109,7 @@ func NewAmqpReceiver(ac AmqpConfig) (receiver *AmqpReceiver, err error) {
 			entry.Target, ok = msg.Headers["delayd-target"].(string)
 			if !ok {
 				log.Println("Bad/missing target. discarding message")
+				eWrapper.Done(false)
 				continue
 			}
 
@@ -132,8 +136,9 @@ func NewAmqpReceiver(ac AmqpConfig) (receiver *AmqpReceiver, err error) {
 			}
 
 			entry.Body = msg.Body
+			eWrapper.Entry = entry
 
-			c <- entry
+			c <- eWrapper
 		}
 	}()
 
@@ -144,7 +149,7 @@ func NewAmqpReceiver(ac AmqpConfig) (receiver *AmqpReceiver, err error) {
 type AmqpSender struct {
 	AmqpBase
 
-	C chan<- Entry
+	C chan<- EntryWrapper
 }
 
 // NewAmqpSender creates a new AmqpSender connected to the given AMQP URL.
