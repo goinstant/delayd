@@ -65,7 +65,7 @@ func (fsm *FSM) Apply(l *raft.Log) interface{} {
 		return nil
 	}
 
-	err = fsm.store.Add(entry, l.Index)
+	_, err = fsm.store.Add(entry, l.Index)
 	if err != nil {
 		log.Println("Error storing entry: ", err)
 		return nil
