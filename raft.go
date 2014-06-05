@@ -49,7 +49,7 @@ func (fsm *FSM) Apply(l *raft.Log) interface{} {
 	entry, err := entryFromBytes(l.Data[2:])
 	if err != nil {
 		log.Println("Error decoding entry: ", err)
-		return nil
+		panic("Could not decode entry!")
 	}
 
 	version, err := fsm.store.Version()
@@ -60,7 +60,7 @@ func (fsm *FSM) Apply(l *raft.Log) interface{} {
 
 	// this doesn't strictly check for version + 1 as raft has internal commands
 	// that go on the log, too.
-	if l.Index < version {
+	if l.Index <= version {
 		log.Printf("Skipping apply for old version (did you restart?) existing=%d new=%d\n", version, l.Index)
 		return nil
 	}
