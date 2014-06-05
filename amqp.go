@@ -76,7 +76,6 @@ func NewAmqpReceiver(ac AmqpConfig) (receiver *AmqpReceiver, err error) {
 	}
 
 	//XXX set Qos here to match incoming concurrency
-	//XXX make the true (autoAck) false, and ack after done.
 	messages, err := receiver.channel.Consume(queue.Name, "delayd", ac.Queue.AutoAck, ac.Queue.Exclusive, ac.Queue.NoLocal, ac.Queue.NoWait, nil)
 	if err != nil {
 		log.Println("Could not set up queue consume: ", err)
