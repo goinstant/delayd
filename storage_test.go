@@ -3,6 +3,7 @@ package main
 import (
 	"io/ioutil"
 	"os"
+	"reflect"
 	"testing"
 	"time"
 
@@ -32,7 +33,7 @@ func TestNewStorageSetsTimer(t *testing.T) {
 		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
 	}
 
-	err = s.Add(e, 0)
+	_, err = s.Add(e, 0)
 	assert.Nil(t, err)
 
 	s.Close()
@@ -54,13 +55,14 @@ func innerTestAdd(t *testing.T, e Entry) {
 	assert.Nil(t, err)
 	defer s.Close()
 
-	err = s.Add(e, 0)
+	_, err = s.Add(e, 0)
 	assert.Nil(t, err)
 
-	entries, err := s.get(e.SendAt)
+	uuids, entries, err := s.get(e.SendAt)
 	assert.Nil(t, err)
 
 	assert.Equal(t, len(entries), 1)
+	assert.Equal(t, len(uuids), 1)
 	assert.Equal(t, entries[0], e)
 }
 
@@ -102,18 +104,72 @@ func TestAddWithKeyReplacesExisting(t *testing.T) {
 	assert.Nil(t, err)
 	defer s.Close()
 
-	err = s.Add(e, 0)
+	_, err = s.Add(e, 0)
 	assert.Nil(t, err)
 
-	err = s.Add(e2, 0)
+	_, err = s.Add(e2, 0)
 	assert.Nil(t, err)
 
 	// since e is before e2, this would return both.
-	entries, err := s.get(e2.SendAt)
+	uuids, entries, err := s.get(e2.SendAt)
 	assert.Nil(t, err)
 
 	assert.Equal(t, len(entries), 1)
+	assert.Equal(t, len(uuids), 1)
 	assert.Equal(t, entries[0], e2)
+}
+
+func assertContains(t *testing.T, l []Entry, i Entry) {
+	v := reflect.ValueOf(i)
+
+	found := false
+	for _, le := range l {
+		if reflect.ValueOf(le) != v {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Fail()
+	}
+}
+
+func TestAddSameTime(t *testing.T) {
+	e := Entry{
+		Target: "something",
+		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
+	}
+
+	e2 := Entry{
+		Target: "something-else",
+		SendAt: e.SendAt,
+	}
+
+	dir, err := ioutil.TempDir("", "delayd-test")
+	assert.Nil(t, err)
+	defer os.Remove(dir)
+
+	s, err := NewStorage(dir, StubSender{})
+	assert.Nil(t, err)
+	defer s.Close()
+
+	_, err = s.Add(e, 0)
+	assert.Nil(t, err)
+
+	_, err = s.Add(e2, 0)
+	assert.Nil(t, err)
+
+	// since e is before e2, this would return both.
+	uuids, entries, err := s.get(e2.SendAt)
+	assert.Nil(t, err)
+
+	assert.Equal(t, len(uuids), 2)
+	assert.Equal(t, len(entries), 2)
+
+	// Entries don't come out in any particular order.
+	assertContains(t, entries, e)
+	assertContains(t, entries, e2)
 }
 
 func TestAddUpdatesVersion(t *testing.T) {
@@ -131,7 +187,7 @@ func TestAddUpdatesVersion(t *testing.T) {
 	assert.Nil(t, err)
 	defer s.Close()
 
-	err = s.Add(e, 11)
+	_, err = s.Add(e, 11)
 	assert.Nil(t, err)
 
 	version, err := s.Version()
@@ -148,16 +204,17 @@ func innerTestRemove(t *testing.T, e Entry) {
 	assert.Nil(t, err)
 	defer s.Close()
 
-	err = s.Add(e, 0)
+	uuid, err := s.Add(e, 0)
 	assert.Nil(t, err)
 
-	err = s.remove(e)
+	err = s.remove(uuid)
 	assert.Nil(t, err)
 
-	entries, err := s.get(e.SendAt)
+	uuids, entries, err := s.get(e.SendAt)
 	assert.Nil(t, err)
 
 	assert.Equal(t, len(entries), 0)
+	assert.Equal(t, len(uuids), 0)
 }
 
 func TestRemoveNoKey(t *testing.T) {
@@ -186,13 +243,47 @@ func TestRemoveEntryNotFound(t *testing.T) {
 	assert.Nil(t, err)
 	defer s.Close()
 
+	badUuid := []byte{0xDE, 0xAD, 0xBE, 0xEF}
+
+	err = s.remove(badUuid)
+	assert.Error(t, err)
+}
+
+func TestRemoveSameTimeRemovesCorrectEntry(t *testing.T) {
 	e := Entry{
 		Target: "something",
 		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
 	}
 
-	err = s.remove(e)
-	assert.Error(t, err)
+	e2 := Entry{
+		Target: "something-else",
+		SendAt: e.SendAt,
+	}
+
+	dir, err := ioutil.TempDir("", "delayd-test")
+	assert.Nil(t, err)
+	defer os.Remove(dir)
+
+	s, err := NewStorage(dir, StubSender{})
+	assert.Nil(t, err)
+	defer s.Close()
+
+	_, err = s.Add(e, 0)
+	assert.Nil(t, err)
+
+	uuid, err := s.Add(e2, 0)
+	assert.Nil(t, err)
+
+	// remove only e2.
+	err = s.remove(uuid)
+
+	uuids, entries, err := s.get(e2.SendAt)
+	assert.Nil(t, err)
+
+	assert.Equal(t, len(uuids), 1)
+	assert.Equal(t, len(entries), 1)
+
+	assert.Equal(t, entries[0], e)
 }
 
 func TestNextTime(t *testing.T) {
@@ -210,7 +301,7 @@ func TestNextTime(t *testing.T) {
 		Key:    "user-key",
 	}
 
-	err = s.Add(e, 0)
+	_, err = s.Add(e, 0)
 	assert.Nil(t, err)
 
 	ok, ts, err := s.nextTime()

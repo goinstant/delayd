@@ -129,14 +129,14 @@ func (s *Storage) startTimerLoop() {
 	for {
 		// XXX change the timer to run a SEND command through raft, and emit on applying that command.
 		t := <-s.timer.C
-		entries, err := s.get(t)
+		uuids, entries, err := s.get(t)
 		// XXX cleanup and shut down properly
 		if err != nil {
 			log.Fatal("Could not read entries from db: ", err)
 		}
 
 		log.Printf("Sending %d entries\n", len(entries))
-		for _, e := range entries {
+		for i, e := range entries {
 			err = s.send.Send(e)
 
 			// error 504 code means that the exchange we were trying
@@ -154,7 +154,7 @@ func (s *Storage) startTimerLoop() {
 				}
 			}
 
-			err = s.remove(e)
+			err = s.remove(uuids[i])
 			if err != nil {
 				// XXX abort comitting for raft here, so it can retry.
 				log.Fatal("Could not remove entry from db: ", err)
@@ -189,8 +189,14 @@ func (s *Storage) startTxn(readonly bool, open ...string) (txn *mdb.Txn, dbis []
 	}
 
 	for _, name := range open {
+		// Allow duplicate entries for the same time
+		realFlags := dbiFlags
+		if name == timeDB {
+			realFlags |= mdb.DUPSORT
+		}
+
 		var dbi mdb.DBI
-		dbi, err = txn.DBIOpen(name, dbiFlags)
+		dbi, err = txn.DBIOpen(name, realFlags)
 		if err != nil {
 			txn.Abort()
 			return
@@ -204,8 +210,8 @@ func (s *Storage) startTxn(readonly bool, open ...string) (txn *mdb.Txn, dbis []
 // Add an Entry to the database. index is the raft log entry's index that
 // triggered this add. It is used to ensure we do not apply the same command
 // twice on a restart.
-func (s *Storage) Add(e Entry, index uint64) (err error) {
-	uuid, err := newUUID()
+func (s *Storage) Add(e Entry, index uint64) (uuid []byte, err error) {
+	uuid, err = newUUID()
 	if err != nil {
 		return
 	}
@@ -227,21 +233,8 @@ func (s *Storage) Add(e Entry, index uint64) (err error) {
 
 		if err == nil {
 			log.Println("Exising key found; removing.")
-			var oeb []byte
-			oeb, err = txn.Get(dbis[1], ouuid)
-			if err != nil {
-				txn.Abort()
-				return
-			}
 
-			var oe Entry
-			oe, err = entryFromBytes(oeb)
-			if err != nil {
-				txn.Abort()
-				return
-			}
-
-			err = s.innerRemove(txn, dbis, oe)
+			err = s.innerRemove(txn, dbis, ouuid)
 			if err != nil {
 				txn.Abort()
 				return
@@ -288,7 +281,7 @@ func (s *Storage) Add(e Entry, index uint64) (err error) {
 	return
 }
 
-func (s *Storage) get(t time.Time) (entries []Entry, err error) {
+func (s *Storage) get(t time.Time) (uuids [][]byte, entries []Entry, err error) {
 	txn, dbis, err := s.startTxn(true, timeDB, entryDB)
 	if err != nil {
 		log.Println("Error creating transaction: ", err)
@@ -335,6 +328,7 @@ func (s *Storage) get(t time.Time) (entries []Entry, err error) {
 		}
 
 		entries = append(entries, entry)
+		uuids = append(uuids, uuid)
 	}
 
 	return
@@ -373,16 +367,21 @@ func (s *Storage) nextTime() (ok bool, t time.Time, err error) {
 	return
 }
 
-func (s *Storage) innerRemove(txn *mdb.Txn, dbis []mdb.DBI, e Entry) (err error) {
-	k := uint64ToBytes(uint64(e.SendAt.UnixNano()))
-
-	uuid, err := txn.Get(dbis[0], k)
+func (s *Storage) innerRemove(txn *mdb.Txn, dbis []mdb.DBI, uuid []byte) (err error) {
+	be, err := txn.Get(dbis[1], uuid)
 	if err != nil {
-		log.Println("Could not read uuid: ", err)
+		log.Println("Could not read entry: ", err)
 		return
 	}
 
-	err = txn.Del(dbis[0], k, nil)
+	e, err := entryFromBytes(be)
+	if err != nil {
+		log.Println("Could not parse entry: ", err)
+		return
+	}
+
+	k := uint64ToBytes(uint64(e.SendAt.UnixNano()))
+	err = txn.Del(dbis[0], k, uuid)
 	if err != nil {
 		log.Println("Could not delete from time series: ", err)
 		return
@@ -420,14 +419,14 @@ func (s *Storage) innerRemove(txn *mdb.Txn, dbis []mdb.DBI, e Entry) (err error)
 	return
 }
 
-// Remove an emitted entry from the db
-func (s *Storage) remove(e Entry) (err error) {
+// Remove an emitted entry from the db. uuid is the Entry's UUID.
+func (s *Storage) remove(uuid []byte) (err error) {
 	txn, dbis, err := s.startTxn(false, timeDB, entryDB, keyDB)
 	if err != nil {
 		return
 	}
 
-	err = s.innerRemove(txn, dbis, e)
+	err = s.innerRemove(txn, dbis, uuid)
 	if err != nil {
 		txn.Abort()
 		return
