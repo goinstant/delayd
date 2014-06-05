@@ -85,7 +85,7 @@ func (s *Storage) initDB(prefix string) (err error) {
 		return
 	}
 
-	// XXX check schema version first (once we change it)
+	// XXX check schema version first (once we change it). See #26
 	err = txn.Put(dbis[0], []byte("schema"), uint64ToBytes(schemaVer), 0)
 	if err != nil {
 		txn.Abort()
