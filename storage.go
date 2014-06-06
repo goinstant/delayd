@@ -104,8 +104,8 @@ func (s *Storage) initDB(prefix string) (err error) {
 // Close gracefully shuts down a storage instance. Before calling it, ensure
 // that all in-flight requests have been processed.
 func (s *Storage) Close() {
-	// XXX This should ensure that all pending storage requests are done, and
-	// block waiting for any events triggered by the timer to complete.
+	// timer itself will shutdown cleanly, and we trust that mdb will wait for
+	// transactions to complete (also be clean)
 	s.env.Close()
 	s.timer.Stop()
 }

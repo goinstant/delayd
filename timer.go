@@ -15,6 +15,8 @@ type SendFunc func(time.Time) (time.Time, bool)
 // Timer handles triggering event emission, and coordination between Storage
 // and the Sender
 type Timer struct {
+	Shutdown
+
 	timerRunning bool
 	timer        *time.Timer
 	nextSend     time.Time
@@ -33,6 +35,7 @@ func NewTimer(sendFunc SendFunc) (t *Timer) {
 	t.m = new(sync.Mutex)
 
 	t.sendFunc = sendFunc
+	t.shutdown = make(chan bool)
 
 	go t.timerLoop()
 
@@ -40,8 +43,8 @@ func NewTimer(sendFunc SendFunc) (t *Timer) {
 }
 
 // Stop gracefully stops the timer, ensuring any running processing is complete.
-// XXX implement graceful stop.
 func (t *Timer) Stop() {
+	t.shutdown <- false
 	t.m.Lock()
 	defer t.m.Unlock()
 	t.timer.Stop()
@@ -74,13 +77,18 @@ func (t *Timer) pause() {
 }
 
 func (t *Timer) timerLoop() {
-	for sendTime := range t.timer.C {
-		nextSend, ok := t.sendFunc(sendTime)
+	for {
+		select {
+		case _ = <-t.shutdown:
+			return
+		case sendTime := <-t.timer.C:
+			nextSend, ok := t.sendFunc(sendTime)
 
-		if ok {
-			t.Reset(nextSend, true)
-		} else {
-			t.pause()
+			if ok {
+				t.Reset(nextSend, true)
+			} else {
+				t.pause()
+			}
 		}
 	}
 }
