@@ -41,6 +41,7 @@ func executeCli(c *cli.Context) {
 	sigHandler(cli)
 
 	cli.Run(config)
+	cli.Stop()
 }
 
 func execute(c *cli.Context) {

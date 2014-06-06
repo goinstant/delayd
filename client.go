@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/codegangsta/cli"
@@ -14,6 +15,7 @@ import (
 // Client is the delayd client.  It can relay messages to the server for easy
 // testing
 type Client struct {
+	Shutdown
 	amqpBase *AmqpBase
 
 	exchange string
@@ -21,6 +23,7 @@ type Client struct {
 	file     string
 	delay    int64
 	repl     bool
+	lock     sync.WaitGroup
 
 	stdin chan []byte
 }
@@ -33,6 +36,7 @@ func NewClient(c *cli.Context) (cli *Client, err error) {
 	cli.repl = c.Bool("repl")
 	cli.delay = int64(c.Int("delay"))
 	cli.file = c.String("file")
+	cli.shutdown = make(chan bool)
 
 	cli.stdin = make(chan []byte)
 
@@ -61,6 +65,7 @@ func (c *Client) send(msg []byte, conf Config) error {
 		return err
 	}
 
+	c.lock.Add(1)
 	log.Println("SENT")
 
 	return nil
@@ -87,6 +92,7 @@ func (c *Client) listenInput() {
 	}
 
 	c.stdin <- dat
+	c.shutdown <- true
 }
 
 func (c *Client) listenResponse(messages <-chan amqp.Delivery) {
@@ -94,7 +100,15 @@ func (c *Client) listenResponse(messages <-chan amqp.Delivery) {
 		// XXX -- It might be worth putting in a shutdown message here in the
 		// future, but likely the client will not need to be fail-proof.
 		msg := <-messages
-		log.Println("got a message", string(msg.Body[:]))
+		log.Println("MSG RECEIVED:", string(msg.Body[:]))
+		defer func() {
+			// XXX We are seeing panics from the waitgroup lock value going below 0.
+			// This shouldn't happen.  Channel is receiving two messages
+			// (the second message is always empty)
+			_ = recover()
+		}()
+
+		c.lock.Done()
 	}
 }
 
@@ -141,17 +155,23 @@ func (c *Client) Run(conf Config) error {
 	go c.listenResponse(messages)
 
 	for {
-		msg := <-c.stdin
-		err := c.send(msg, conf)
+		select {
+		case _ = <-c.shutdown:
+			return nil
+		case msg := <-c.stdin:
+			err := c.send(msg, conf)
 
-		if err != nil {
-			log.Println("Got Err:", err)
+			if err != nil {
+				log.Println("Got Err:", err)
+			}
 		}
 	}
 }
 
 // Stop is resonsible for shutting down all services used by the Client
 func (c *Client) Stop() {
-	log.Println("Shutting down gracefully.")
+	log.Println("Shutting down gracefully")
+	log.Println("waiting for AMQP responses to arrive")
+	c.lock.Wait()
 	c.amqpBase.Close()
 }
