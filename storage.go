@@ -26,13 +26,10 @@ const (
 // Storage is the database backend for persisting Entries via LMDB, and triggering
 // entry emission.
 type Storage struct {
-	env  *mdb.Env
-	dbi  *mdb.DBI
-	send Sender
-
-	timerRunning bool
-	timer        *time.Timer
-	nextSend     time.Time
+	env   *mdb.Env
+	dbi   *mdb.DBI
+	send  Sender
+	timer *Timer
 }
 
 // NewStorage creates a new Storage instance. prefix is the base directory where
@@ -46,9 +43,14 @@ func NewStorage(prefix string, send Sender) (s *Storage, err error) {
 		return
 	}
 
-	err = s.initTimer()
+	ok, t, err := s.nextTime()
 	if err != nil {
 		return
+	}
+
+	s.timer = NewTimer(s.timerSend)
+	if ok {
+		s.timer.ResetTimer(t)
 	}
 
 	return
@@ -99,22 +101,6 @@ func (s *Storage) initDB(prefix string) (err error) {
 	return
 }
 
-func (s *Storage) initTimer() (err error) {
-	s.timer = time.NewTimer(time.Duration(24) * time.Hour)
-
-	ok, t, err := s.nextTime()
-	if err != nil {
-		return
-	}
-
-	if ok {
-		s.resetTimer(t)
-	}
-
-	go s.startTimerLoop()
-	return
-}
-
 // Close gracefully shuts down a storage instance. Before calling it, ensure
 // that all in-flight requests have been processed.
 func (s *Storage) Close() {
@@ -124,52 +110,46 @@ func (s *Storage) Close() {
 	s.timer.Stop()
 }
 
-func (s *Storage) startTimerLoop() {
-	for {
-		// XXX change the timer to run a SEND command through raft, and emit on applying that command.
-		t := <-s.timer.C
-		uuids, entries, err := s.get(t)
-		// XXX cleanup and shut down properly
-		if err != nil {
-			log.Fatal("Could not read entries from db: ", err)
-		}
+func (s *Storage) timerSend(t time.Time) (next time.Time, ok bool) {
+	// XXX change the timer to run a SEND command through raft, and emit on applying that command.
+	uuids, entries, err := s.get(t)
+	// XXX cleanup and shut down properly
+	if err != nil {
+		log.Fatal("Could not read entries from db: ", err)
+	}
 
-		log.Printf("Sending %d entries\n", len(entries))
-		for i, e := range entries {
-			err = s.send.Send(e)
+	log.Printf("Sending %d entries\n", len(entries))
+	for i, e := range entries {
+		err = s.send.Send(e)
 
-			// error 504 code means that the exchange we were trying
-			// to send on didnt exist.  In the case of delayd this usually
-			// means that a consumer didn't set up the exchange they wish
-			// to be notified on.  We do not attempt to make this for them,
-			// as we don't know what exchange options they would want, we
-			// simply drop this message, other errors are fatal
+		// error 504 code means that the exchange we were trying
+		// to send on didnt exist.  In the case of delayd this usually
+		// means that a consumer didn't set up the exchange they wish
+		// to be notified on.  We do not attempt to make this for them,
+		// as we don't know what exchange options they would want, we
+		// simply drop this message, other errors are fatal
 
-			if err, ok := err.(*amqp.Error); ok {
-				if err.Code != 504 {
-					log.Fatal("Could not send entry: ", err)
-				} else {
-					log.Printf("channel/connection not set up for exchange `%s`, message will be deleted", e.Target)
-				}
-			}
-
-			err = s.remove(uuids[i])
-			if err != nil {
-				// XXX abort comitting for raft here, so it can retry.
-				log.Fatal("Could not remove entry from db: ", err)
+		if err, ok := err.(*amqp.Error); ok {
+			if err.Code != 504 {
+				log.Fatal("Could not send entry: ", err)
+			} else {
+				log.Printf("channel/connection not set up for exchange `%s`, message will be deleted", e.Target)
 			}
 		}
 
-		ok, t, err := s.nextTime()
+		err = s.remove(uuids[i])
 		if err != nil {
-			log.Fatal("Could not read next time from db: ", err)
-		}
-
-		s.timerRunning = false
-		if ok {
-			s.resetTimer(t)
+			// XXX abort comitting for raft here, so it can retry.
+			log.Fatal("Could not remove entry from db: ", err)
 		}
 	}
+
+	ok, next, err = s.nextTime()
+	if err != nil {
+		log.Fatal("Could not read next time from db: ", err)
+	}
+
+	return
 }
 
 // startTxn is used to start a transaction and open all the associated sub-databases
@@ -272,9 +252,7 @@ func (s *Storage) Add(e Entry, index uint64) (uuid []byte, err error) {
 		return
 	}
 
-	if !s.timerRunning || e.SendAt.Before(s.nextSend) {
-		s.resetTimer(e.SendAt)
-	}
+	s.timer.ResetTimer(e.SendAt)
 
 	err = txn.Commit()
 	return
@@ -433,16 +411,6 @@ func (s *Storage) remove(uuid []byte) (err error) {
 
 	txn.Commit()
 	return
-}
-
-func (s *Storage) resetTimer(t time.Time) {
-	if t.Before(time.Now()) {
-		t = time.Now()
-	}
-	log.Println("Setting next timer for: ", t)
-	s.timerRunning = true
-	s.timer.Reset(t.Sub(time.Now()))
-	s.nextSend = t
 }
 
 // Version returns the current raft index version as stored in the db.
