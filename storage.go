@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/armon/gomdb"
-	"github.com/streadway/amqp"
 )
 
 const (
@@ -26,31 +25,18 @@ const (
 // Storage is the database backend for persisting Entries via LMDB, and triggering
 // entry emission.
 type Storage struct {
-	env   *mdb.Env
-	dbi   *mdb.DBI
-	send  Sender
-	timer *Timer
+	env *mdb.Env
+	dbi *mdb.DBI
 }
 
 // NewStorage creates a new Storage instance. prefix is the base directory where
 // data is written on-disk.
-func NewStorage(prefix string, send Sender) (s *Storage, err error) {
+func NewStorage(prefix string) (s *Storage, err error) {
 	s = new(Storage)
-	s.send = send
 
 	err = s.initDB(prefix)
 	if err != nil {
 		return
-	}
-
-	ok, t, err := s.nextTime()
-	if err != nil {
-		return
-	}
-
-	s.timer = NewTimer(s.timerSend)
-	if ok {
-		s.timer.Reset(t, true)
 	}
 
 	return
@@ -107,49 +93,6 @@ func (s *Storage) Close() {
 	// timer itself will shutdown cleanly, and we trust that mdb will wait for
 	// transactions to complete (also be clean)
 	s.env.Close()
-	s.timer.Stop()
-}
-
-func (s *Storage) timerSend(t time.Time) (next time.Time, ok bool) {
-	// XXX change the timer to run a SEND command through raft, and emit on applying that command.
-	uuids, entries, err := s.get(t)
-	// XXX cleanup and shut down properly
-	if err != nil {
-		log.Fatal("Could not read entries from db: ", err)
-	}
-
-	log.Printf("Sending %d entries\n", len(entries))
-	for i, e := range entries {
-		err = s.send.Send(e)
-
-		// error 504 code means that the exchange we were trying
-		// to send on didnt exist.  In the case of delayd this usually
-		// means that a consumer didn't set up the exchange they wish
-		// to be notified on.  We do not attempt to make this for them,
-		// as we don't know what exchange options they would want, we
-		// simply drop this message, other errors are fatal
-
-		if err, ok := err.(*amqp.Error); ok {
-			if err.Code != 504 {
-				log.Fatal("Could not send entry: ", err)
-			} else {
-				log.Printf("channel/connection not set up for exchange `%s`, message will be deleted", e.Target)
-			}
-		}
-
-		err = s.remove(uuids[i])
-		if err != nil {
-			// XXX abort comitting for raft here, so it can retry.
-			log.Fatal("Could not remove entry from db: ", err)
-		}
-	}
-
-	ok, next, err = s.nextTime()
-	if err != nil {
-		log.Fatal("Could not read next time from db: ", err)
-	}
-
-	return
 }
 
 // startTxn is used to start a transaction and open all the associated sub-databases
@@ -252,13 +195,12 @@ func (s *Storage) Add(e Entry, index uint64) (uuid []byte, err error) {
 		return
 	}
 
-	s.timer.Reset(e.SendAt, false)
-
 	err = txn.Commit()
 	return
 }
 
-func (s *Storage) get(t time.Time) (uuids [][]byte, entries []Entry, err error) {
+// Get returns all entries that occur at or before the provided time
+func (s *Storage) Get(t time.Time) (uuids [][]byte, entries []Entry, err error) {
 	txn, dbis, err := s.startTxn(true, timeDB, entryDB)
 	if err != nil {
 		log.Println("Error creating transaction: ", err)
@@ -311,8 +253,8 @@ func (s *Storage) get(t time.Time) (uuids [][]byte, entries []Entry, err error) 
 	return
 }
 
-// get the next entry send time from the db
-func (s *Storage) nextTime() (ok bool, t time.Time, err error) {
+// NextTime gets the next entry send time from the db
+func (s *Storage) NextTime() (ok bool, t time.Time, err error) {
 	ok = true
 	txn, dbis, err := s.startTxn(true, timeDB)
 	if err != nil {
@@ -397,7 +339,7 @@ func (s *Storage) innerRemove(txn *mdb.Txn, dbis []mdb.DBI, uuid []byte) (err er
 }
 
 // Remove an emitted entry from the db. uuid is the Entry's UUID.
-func (s *Storage) remove(uuid []byte) (err error) {
+func (s *Storage) Remove(uuid []byte) (err error) {
 	txn, dbis, err := s.startTxn(false, timeDB, entryDB, keyDB)
 	if err != nil {
 		return

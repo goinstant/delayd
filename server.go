@@ -4,6 +4,8 @@ import (
 	"log"
 	"os"
 	"time"
+
+	"github.com/streadway/amqp"
 )
 
 // Server is the delayd server. It handles the server lifecycle (startup, clean shutdown)
@@ -12,6 +14,7 @@ type Server struct {
 	receiver *AmqpReceiver
 	storage  *Storage
 	raft     *Raft
+	timer    *Timer
 }
 
 // Run initializes the Server from a Config, and begins its main loop.
@@ -35,7 +38,7 @@ func (s *Server) Run(c Config) {
 		log.Fatal("Could not initialize sender: ", err)
 	}
 
-	s.storage, err = NewStorage(c.DataDir, s.sender)
+	s.storage, err = NewStorage(c.DataDir)
 	if err != nil {
 		log.Fatal("Could not initialize storage backend: ", err)
 	}
@@ -43,6 +46,15 @@ func (s *Server) Run(c Config) {
 	s.raft, err = NewRaft(c.DataDir, s.storage)
 	if err != nil {
 		log.Fatal("Could not initialize raft: ", err)
+	}
+
+	ok, t, err := s.storage.NextTime()
+	if err != nil {
+		log.Fatal("Could not read initial send time from storage: ", err)
+	}
+	s.timer = NewTimer(s.timerSend)
+	if ok {
+		s.timer.Reset(t, true)
 	}
 
 	for {
@@ -62,6 +74,8 @@ func (s *Server) Run(c Config) {
 
 		// a generous 60 seconds to apply this command
 		s.raft.Apply(b, time.Duration(60)*time.Second)
+		s.timer.Reset(entry.SendAt, false)
+
 		eWrapper.Done(true)
 	}
 }
@@ -77,4 +91,46 @@ func (s *Server) Stop() {
 	s.raft.Close()
 
 	log.Println("Terminated.")
+}
+
+func (s *Server) timerSend(t time.Time) (next time.Time, ok bool) {
+	// XXX change the timer to run a SEND command through raft, and emit on applying that command.
+	uuids, entries, err := s.storage.Get(t)
+	// XXX cleanup and shut down properly
+	if err != nil {
+		log.Fatal("Could not read entries from db: ", err)
+	}
+
+	log.Printf("Sending %d entries\n", len(entries))
+	for i, e := range entries {
+		err = s.sender.Send(e)
+
+		// error 504 code means that the exchange we were trying
+		// to send on didnt exist.  In the case of delayd this usually
+		// means that a consumer didn't set up the exchange they wish
+		// to be notified on.  We do not attempt to make this for them,
+		// as we don't know what exchange options they would want, we
+		// simply drop this message, other errors are fatal
+
+		if err, ok := err.(*amqp.Error); ok {
+			if err.Code != 504 {
+				log.Fatal("Could not send entry: ", err)
+			} else {
+				log.Printf("channel/connection not set up for exchange `%s`, message will be deleted", e.Target)
+			}
+		}
+
+		err = s.storage.Remove(uuids[i])
+		if err != nil {
+			// XXX abort comitting for raft here, so it can retry.
+			log.Fatal("Could not remove entry from db: ", err)
+		}
+	}
+
+	ok, next, err = s.storage.NextTime()
+	if err != nil {
+		log.Fatal("Could not read next time from db: ", err)
+	}
+
+	return
 }
