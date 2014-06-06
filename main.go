@@ -22,6 +22,7 @@ func executeCli(c *cli.Context) {
 	cli := Client{
 		exchange: c.String("exchange"),
 		key:      c.String("key"),
+		delay:    int64(c.Int("delay")),
 	}
 	cli.stdin = make(chan []byte)
 	go cli.Run(config)
@@ -92,6 +93,7 @@ func main() {
 		cli.StringFlag{"key, k", "delayd-key", "key to store message under"},
 		cli.BoolFlag{"repl, r", "launch client in REPL mode"},
 		cli.StringFlag{"file, f ", "msg.json", "read message from file"},
+		cli.IntFlag{"delay, d", 1000, "expiry time"},
 	}
 
 	app.Commands = []cli.Command{
