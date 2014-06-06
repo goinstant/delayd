@@ -18,12 +18,14 @@ type Client struct {
 	Shutdown
 	amqpBase *AmqpBase
 
-	exchange string
-	key      string
-	file     string
-	delay    int64
-	repl     bool
-	lock     sync.WaitGroup
+	exchange       string
+	key            string
+	file           string
+	outFile        string
+	delay          int64
+	repl           bool
+	outFileDefined bool
+	lock           sync.WaitGroup
 
 	stdin chan []byte
 }
@@ -36,6 +38,8 @@ func NewClient(c *cli.Context) (cli *Client, err error) {
 	cli.repl = c.Bool("repl")
 	cli.delay = int64(c.Int("delay"))
 	cli.file = c.String("file")
+	cli.outFile = c.String("out")
+	cli.outFileDefined = cli.outFile != ""
 	cli.shutdown = make(chan bool)
 
 	cli.stdin = make(chan []byte)
@@ -100,11 +104,27 @@ func (c *Client) listenResponse(messages <-chan amqp.Delivery) {
 		// XXX -- It might be worth putting in a shutdown message here in the
 		// future, but likely the client will not need to be fail-proof.
 		msg := <-messages
-		log.Println("MSG RECEIVED:", string(msg.Body[:]))
+		if c.outFileDefined {
+			f, err := os.OpenFile(c.outFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+			if err != nil {
+				panic(err)
+			}
+
+			defer f.Close()
+			_, err = f.Write(msg.Body)
+			if err != nil {
+				panic(err)
+			}
+
+			log.Println("Wrote response to", c.outFile)
+		} else {
+			log.Println("MSG RECEIVED:", string(msg.Body[:]))
+		}
+
 		defer func() {
 			// XXX We are seeing panics from the waitgroup lock value going below 0.
 			// This shouldn't happen.  Channel is receiving two messages
-			// (the second message is always empty)
+			// (the second message is always empty) .. null byte from EOF read?
 			_ = recover()
 		}()
 

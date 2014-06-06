@@ -73,6 +73,7 @@ func main() {
 		cli.BoolFlag{"repl, r", "launch client in REPL mode"},
 		cli.StringFlag{"file, f ", "msg.json", "read message from file"},
 		cli.IntFlag{"delay, d", 1000, "expiry time"},
+		cli.StringFlag{"out, o", "", "write delayd response to file"},
 	}
 
 	app.Commands = []cli.Command{
