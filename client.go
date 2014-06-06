@@ -13,6 +13,7 @@ type Client struct {
 
 	exchange string
 	key      string
+	delay    int64
 
 	// XXX -- for response
 	// messages <- chan amqp.Delivery
@@ -28,7 +29,7 @@ func (c *Client) send(msg []byte, conf Config) error {
 		Timestamp:    time.Now(),
 		ContentType:  "text/plain",
 		Headers: amqp.Table{
-			"delayd-delay":  int64(4000),
+			"delayd-delay":  c.delay,
 			"delayd-target": c.exchange,
 			"delayd-key":    c.key,
 		},
