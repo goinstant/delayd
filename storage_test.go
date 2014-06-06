@@ -26,7 +26,7 @@ func TestNewStorageSetsTimer(t *testing.T) {
 	s, err := NewStorage(dir, StubSender{})
 	assert.Nil(t, err)
 
-	assert.False(t, s.timerRunning)
+	assert.False(t, s.timer.timerRunning)
 
 	e := Entry{
 		Target: "something",
@@ -43,7 +43,7 @@ func TestNewStorageSetsTimer(t *testing.T) {
 	defer s.Close()
 
 	assert.Nil(t, err)
-	assert.True(t, s.timerRunning)
+	assert.True(t, s.timer.timerRunning)
 }
 
 func innerTestAdd(t *testing.T, e Entry) {
