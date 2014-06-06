@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bufio"
-	"io/ioutil"
 	"log"
 	"os"
 	"os/signal"
@@ -10,6 +8,22 @@ import (
 
 	"github.com/codegangsta/cli"
 )
+
+type stopable interface {
+	Stop()
+}
+
+func sigHandler(s stopable) {
+	// graceful shutdown for ^C and kill
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		for _ = range ch {
+			s.Stop()
+			os.Exit(0)
+		}
+	}()
+}
 
 func executeCli(c *cli.Context) {
 	log.Println("Starting delayd.Client")
@@ -19,40 +33,14 @@ func executeCli(c *cli.Context) {
 		log.Fatal("Unable to read config file: ", err)
 	}
 
-	cli := Client{
-		exchange: c.String("exchange"),
-		key:      c.String("key"),
-		delay:    int64(c.Int("delay")),
-	}
-	cli.stdin = make(chan []byte)
-	go cli.Run(config)
-
-	// we will only stick around reading stdin forever if the user specifies
-	// --repl
-
-	if c.Bool("repl") == false {
-		f := c.String("file")
-		dat, err := ioutil.ReadFile(f)
-		if err != nil {
-			log.Fatalf("Error reading from file: %s, got error: %s", f, err)
-		}
-
-		cli.stdin <- dat
-
-		return
+	cli, err := NewClient(c)
+	if err != nil {
+		log.Fatal("error creating client")
 	}
 
-	log.Println("Waiting for STDIN")
-	bio := bufio.NewReader(os.Stdin)
+	sigHandler(cli)
 
-	for {
-		line, err := bio.ReadBytes('\n')
-		if err != nil {
-			log.Fatal("Error reading from STDIN")
-		}
-
-		cli.stdin <- line
-	}
+	cli.Run(config)
 }
 
 func execute(c *cli.Context) {
@@ -64,17 +52,7 @@ func execute(c *cli.Context) {
 	}
 
 	s := Server{}
-
-	// graceful shutdown for ^C and kill
-	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		for _ = range ch {
-			s.Stop()
-			os.Exit(0)
-		}
-	}()
-
+	sigHandler(&s)
 	s.Run(config)
 }
 
