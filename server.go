@@ -8,6 +8,9 @@ import (
 	"github.com/streadway/amqp"
 )
 
+// a generous 60 seconds to apply raft commands
+const raftMaxTime = time.Duration(60) * time.Second
+
 // Server is the delayd server. It handles the server lifecycle (startup, clean shutdown)
 type Server struct {
 	sender   *AmqpSender
@@ -72,8 +75,10 @@ func (s *Server) Run(c Config) {
 			continue
 		}
 
-		// a generous 60 seconds to apply this command
-		s.raft.Apply(b, time.Duration(60)*time.Second)
+		err = s.raft.Add(b, raftMaxTime)
+		if err != nil {
+			eWrapper.Done(false)
+		}
 		s.timer.Reset(entry.SendAt, false)
 
 		eWrapper.Done(true)
@@ -94,9 +99,7 @@ func (s *Server) Stop() {
 }
 
 func (s *Server) timerSend(t time.Time) (next time.Time, ok bool) {
-	// XXX change the timer to run a SEND command through raft, and emit on applying that command.
 	uuids, entries, err := s.storage.Get(t)
-	// XXX cleanup and shut down properly
 	if err != nil {
 		log.Fatal("Could not read entries from db: ", err)
 	}
@@ -120,11 +123,17 @@ func (s *Server) timerSend(t time.Time) (next time.Time, ok bool) {
 			}
 		}
 
-		err = s.storage.Remove(uuids[i])
+		err = s.raft.Remove(uuids[i], raftMaxTime)
 		if err != nil {
 			// XXX abort comitting for raft here, so it can retry.
 			log.Fatal("Could not remove entry from db: ", err)
 		}
+	}
+
+	// ensure everyone is up to date
+	err = s.raft.SyncAll()
+	if err != nil {
+		log.Fatal("Could not sync all cluster nodes: ", err)
 	}
 
 	ok, next, err = s.storage.NextTime()
