@@ -50,7 +50,7 @@ func NewStorage(prefix string, send Sender) (s *Storage, err error) {
 
 	s.timer = NewTimer(s.timerSend)
 	if ok {
-		s.timer.ResetTimer(t)
+		s.timer.Reset(t, true)
 	}
 
 	return
@@ -252,7 +252,7 @@ func (s *Storage) Add(e Entry, index uint64) (uuid []byte, err error) {
 		return
 	}
 
-	s.timer.ResetTimer(e.SendAt)
+	s.timer.Reset(e.SendAt, false)
 
 	err = txn.Commit()
 	return
