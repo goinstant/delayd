@@ -1,9 +1,14 @@
 package main
 
 import (
-	"github.com/streadway/amqp"
+	"bufio"
+	"io/ioutil"
 	"log"
+	"os"
 	"time"
+
+	"github.com/codegangsta/cli"
+	"github.com/streadway/amqp"
 )
 
 // Client is the delayd client.  It can relay messages to the server for easy
@@ -13,12 +18,25 @@ type Client struct {
 
 	exchange string
 	key      string
+	file     string
 	delay    int64
-
-	// XXX -- for response
-	// messages <- chan amqp.Delivery
+	repl     bool
 
 	stdin chan []byte
+}
+
+// NewClient creates and returns a Client instance
+func NewClient(c *cli.Context) (cli *Client, err error) {
+	cli = new(Client)
+	cli.exchange = c.String("exchange")
+	cli.key = c.String("key")
+	cli.repl = c.Bool("repl")
+	cli.delay = int64(c.Int("delay"))
+	cli.file = c.String("file")
+
+	cli.stdin = make(chan []byte)
+
+	return cli, nil
 }
 
 func (c *Client) send(msg []byte, conf Config) error {
@@ -48,16 +66,36 @@ func (c *Client) send(msg []byte, conf Config) error {
 	return nil
 }
 
-// Listen is responsible for hearing messages back from the server
-func (c *Client) Listen(messages <-chan amqp.Delivery) {
-	go func() {
+func (c *Client) listenInput() {
+	if c.repl {
+		log.Println("Waiting for STDIN")
+		bio := bufio.NewReader(os.Stdin)
 		for {
-			// XXX -- It might be worth putting in a shutdown message here in the
-			// future, but likely the client will not need to be fail-proof.
-			msg := <-messages
-			log.Println("got a message", string(msg.Body[:]))
+			line, err := bio.ReadBytes('\n')
+			if err != nil {
+				log.Fatal("Error reading from STDIN")
+			}
+
+			c.stdin <- line
 		}
-	}()
+	}
+
+	f := c.file
+	dat, err := ioutil.ReadFile(f)
+	if err != nil {
+		log.Fatalf("Error reading from file: %s, got error: %s", f, err)
+	}
+
+	c.stdin <- dat
+}
+
+func (c *Client) listenResponse(messages <-chan amqp.Delivery) {
+	for {
+		// XXX -- It might be worth putting in a shutdown message here in the
+		// future, but likely the client will not need to be fail-proof.
+		msg := <-messages
+		log.Println("got a message", string(msg.Body[:]))
+	}
 }
 
 // Run is called to set up amqp options and then relay messages to the server
@@ -99,7 +137,8 @@ func (c *Client) Run(conf Config) error {
 
 	messages, err := ch.Consume(queue.Name, "delayd", true, q.Exclusive, q.NoLocal, q.NoLocal, nil)
 
-	c.Listen(messages)
+	go c.listenInput()
+	go c.listenResponse(messages)
 
 	for {
 		msg := <-c.stdin
@@ -109,4 +148,10 @@ func (c *Client) Run(conf Config) error {
 			log.Println("Got Err:", err)
 		}
 	}
+}
+
+// Stop is resonsible for shutting down all services used by the Client
+func (c *Client) Stop() {
+	log.Println("Shutting down gracefully.")
+	c.amqpBase.Close()
 }
