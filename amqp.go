@@ -7,9 +7,17 @@ import (
 	"github.com/streadway/amqp"
 )
 
+// Shutdown is a base class that is inheritable by any other class that may want
+// to send a shutdown signal over a channel
+type Shutdown struct {
+	shutdown chan bool
+}
+
 // AmqpBase is the base class for amqp senders and recievers, containing the
 // startup and shutdown logic.
 type AmqpBase struct {
+	Shutdown
+
 	connection *amqp.Connection
 	channel    *amqp.Channel
 }
@@ -43,6 +51,13 @@ type AmqpReceiver struct {
 	AmqpBase
 	C    <-chan EntryWrapper
 	rawC <-chan amqp.Delivery
+}
+
+// Close overwrites the base class close because we need to do some additional
+// work for the receiver (signalling the shutdown channel)
+func (a AmqpReceiver) Close() {
+	a.shutdown <- true
+	a.AmqpBase.Close()
 }
 
 // NewAmqpReceiver creates a new AmqpReceiver based on the provided AmqpConfig,
@@ -84,60 +99,66 @@ func NewAmqpReceiver(ac AmqpConfig) (receiver *AmqpReceiver, err error) {
 
 	c := make(chan EntryWrapper)
 	receiver.C = c
+	receiver.shutdown = make(chan bool)
 
 	go func() {
 		for {
-			msg, ok := <-messages
-			entry := Entry{}
-
-			eWrapper := EntryWrapper{Msg: msg}
-
-			// channel was closed. exit
-			if !ok {
+			select {
+			case _ = <-receiver.shutdown:
+				log.Println("received signal to quit reading amqp, exiting goroutine")
 				return
+			case msg, ok := <-messages:
+				entry := Entry{}
+
+				eWrapper := EntryWrapper{Msg: msg}
+
+				// channel was closed. exit
+				if !ok {
+					return
+				}
+
+				delay, ok := msg.Headers["delayd-delay"].(int64)
+				if !ok {
+					log.Println("Bad/missing delay. discarding message")
+					eWrapper.Done(false)
+					continue
+				}
+				entry.SendAt = time.Now().Add(time.Duration(delay) * time.Millisecond)
+
+				entry.Target, ok = msg.Headers["delayd-target"].(string)
+				if !ok {
+					log.Println("Bad/missing target. discarding message")
+					eWrapper.Done(false)
+					continue
+				}
+
+				// optional key value for overwrite
+				h, ok := msg.Headers["delayd-key"].(string)
+				if ok {
+					entry.Key = h
+				}
+
+				// optional headers that will be relayed
+				h, ok = msg.Headers["content-type"].(string)
+				if ok {
+					entry.ContentType = h
+				}
+
+				h, ok = msg.Headers["content-encoding"].(string)
+				if ok {
+					entry.ContentEncoding = h
+				}
+
+				h, ok = msg.Headers["correlation-id"].(string)
+				if ok {
+					entry.CorrelationID = h
+				}
+
+				entry.Body = msg.Body
+				eWrapper.Entry = entry
+
+				c <- eWrapper
 			}
-
-			delay, ok := msg.Headers["delayd-delay"].(int64)
-			if !ok {
-				log.Println("Bad/missing delay. discarding message")
-				eWrapper.Done(false)
-				continue
-			}
-			entry.SendAt = time.Now().Add(time.Duration(delay) * time.Millisecond)
-
-			entry.Target, ok = msg.Headers["delayd-target"].(string)
-			if !ok {
-				log.Println("Bad/missing target. discarding message")
-				eWrapper.Done(false)
-				continue
-			}
-
-			// optional key value for overwrite
-			h, ok := msg.Headers["delayd-key"].(string)
-			if ok {
-				entry.Key = h
-			}
-
-			// optional headers that will be relayed
-			h, ok = msg.Headers["content-type"].(string)
-			if ok {
-				entry.ContentType = h
-			}
-
-			h, ok = msg.Headers["content-encoding"].(string)
-			if ok {
-				entry.ContentEncoding = h
-			}
-
-			h, ok = msg.Headers["correlation-id"].(string)
-			if ok {
-				entry.CorrelationID = h
-			}
-
-			entry.Body = msg.Body
-			eWrapper.Entry = entry
-
-			c <- eWrapper
 		}
 	}()
 
