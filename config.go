@@ -1,4 +1,4 @@
-package main
+package delayd
 
 import (
 	"github.com/BurntSushi/toml"

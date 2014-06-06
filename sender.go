@@ -1,4 +1,4 @@
-package main
+package delayd
 
 // Sender describes the interface for sending delayd entries after their time
 // has lapsed.
