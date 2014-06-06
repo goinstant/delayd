@@ -90,8 +90,7 @@ func (s *Storage) initDB(prefix string) (err error) {
 // Close gracefully shuts down a storage instance. Before calling it, ensure
 // that all in-flight requests have been processed.
 func (s *Storage) Close() {
-	// timer itself will shutdown cleanly, and we trust that mdb will wait for
-	// transactions to complete (also be clean)
+	// we trust that mdb will wait for transactions to complete (also be clean)
 	s.env.Close()
 }
 
@@ -338,14 +337,21 @@ func (s *Storage) innerRemove(txn *mdb.Txn, dbis []mdb.DBI, uuid []byte) (err er
 	return
 }
 
-// Remove an emitted entry from the db. uuid is the Entry's UUID.
-func (s *Storage) Remove(uuid []byte) (err error) {
-	txn, dbis, err := s.startTxn(false, timeDB, entryDB, keyDB)
+// Remove an emitted entry from the db. uuid is the Entry's UUID. index is the
+// entry's raft log index.
+func (s *Storage) Remove(uuid []byte, index uint64) (err error) {
+	txn, dbis, err := s.startTxn(false, timeDB, entryDB, keyDB, metaDB)
 	if err != nil {
 		return
 	}
 
 	err = s.innerRemove(txn, dbis, uuid)
+	if err != nil {
+		txn.Abort()
+		return
+	}
+
+	err = txn.Put(dbis[3], []byte("version"), uint64ToBytes(index), 0)
 	if err != nil {
 		txn.Abort()
 		return

@@ -17,6 +17,7 @@ type Command uint8
 
 const (
 	addCmd Command = iota
+	rmCmd
 )
 
 const logSchemaVersion = 0x0
@@ -31,25 +32,10 @@ type FSM struct {
 // schema version and command type are present and understood. It panics
 // if not.
 func (fsm *FSM) Apply(l *raft.Log) interface{} {
-	log.Println("Applying log ", l)
-
 	logVer := l.Data[0]
 	if logVer != logSchemaVersion {
 		log.Printf("Unknown log schema version seen. version=%d", logVer)
 		panic("Unknown log schema version!")
-	}
-
-	// Once we have more types, we can do something with them.
-	cmdType := l.Data[1]
-	if cmdType != byte(addCmd) {
-		log.Printf("Unknown command type seen. type=%d", cmdType)
-		panic("Unknown command type!")
-	}
-
-	entry, err := entryFromBytes(l.Data[2:])
-	if err != nil {
-		log.Println("Error decoding entry: ", err)
-		panic("Could not decode entry!")
 	}
 
 	version, err := fsm.store.Version()
@@ -65,10 +51,29 @@ func (fsm *FSM) Apply(l *raft.Log) interface{} {
 		return nil
 	}
 
-	_, err = fsm.store.Add(entry, l.Index)
-	if err != nil {
-		log.Println("Error storing entry: ", err)
-		return nil
+	cmdType := l.Data[1]
+	switch cmdType {
+	case byte(addCmd):
+		log.Println("Applying add command")
+		entry, err := entryFromBytes(l.Data[2:])
+		if err != nil {
+			log.Println("Error decoding entry: ", err)
+			panic("Could not decode entry!")
+		}
+
+		_, err = fsm.store.Add(entry, l.Index)
+		if err != nil {
+			log.Println("Error storing entry: ", err)
+		}
+	case byte(rmCmd):
+		log.Println("Applying rm command")
+		err = fsm.store.Remove(l.Data[2:], l.Index)
+		if err != nil {
+			log.Println("Error removing entry: ", err)
+		}
+	default:
+		log.Printf("Unknown command type seen. type=%d", cmdType)
+		panic("Unknown command type!")
 	}
 
 	return nil
@@ -151,12 +156,28 @@ func (r *Raft) Close() {
 	r.mdb.Close()
 }
 
-// Apply wraps the internal raft Apply, for encapsulation!
+// Add wraps the internal raft Apply, for encapsulation!
 // Commands sent to raft are prefixed with a header containing two bytes of
 // additional data:
 // - the first byte indicates the schema version of the log entry
 // - the second byte indicates the command type
-func (r *Raft) Apply(cmd []byte, timeout time.Duration) {
+func (r *Raft) Add(cmd []byte, timeout time.Duration) error {
 	h := []byte{logSchemaVersion, byte(addCmd)}
-	r.raft.Apply(append(h, cmd...), timeout)
+	future := r.raft.Apply(append(h, cmd...), timeout)
+	return future.Error()
+}
+
+// Remove enqueues a remove command in raft. Like Add, it prefixes version and
+// command type.
+func (r *Raft) Remove(cmd []byte, timeout time.Duration) error {
+	h := []byte{logSchemaVersion, byte(rmCmd)}
+	future := r.raft.Apply(append(h, cmd...), timeout)
+	return future.Error()
+}
+
+// SyncAll Ensures that all raft nodes are up to date with the latest state for
+// their FSM
+func (r *Raft) SyncAll() error {
+	future := r.raft.Barrier(0)
+	return future.Error()
 }

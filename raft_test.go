@@ -16,6 +16,7 @@ const (
 )
 
 var v0AddCmd = []byte{logSchemaVersion, byte(addCmd)}
+var v0RmCmd = []byte{logSchemaVersion, byte(rmCmd)}
 
 func TestApplyPanicsOnBadSchemaVersion(t *testing.T) {
 	l := raft.Log{Data: []byte{invalidSchema}}
@@ -155,4 +156,30 @@ func TestApplyAddsMultipleEntries(t *testing.T) {
 
 	_, entries, _ := s.Get(e.SendAt)
 	assert.Equal(t, len(entries), 2)
+}
+
+func TestRemove(t *testing.T) {
+	dir, err := ioutil.TempDir("", "delayd-test")
+	assert.Nil(t, err)
+	defer os.Remove(dir)
+
+	s, err := NewStorage(dir)
+	assert.Nil(t, err)
+	defer s.Close()
+
+	e := Entry{
+		Target: "something",
+		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
+	}
+
+	fsm := FSM{s}
+
+	uuid, err := s.Add(e, 0)
+	assert.Nil(t, err)
+
+	l := raft.Log{Data: append(v0RmCmd, uuid...), Index: 2}
+	fsm.Apply(&l)
+
+	_, entries, _ := s.Get(e.SendAt)
+	assert.Equal(t, len(entries), 0)
 }

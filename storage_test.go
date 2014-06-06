@@ -171,7 +171,7 @@ func innerTestRemove(t *testing.T, e Entry) {
 	uuid, err := s.Add(e, 0)
 	assert.Nil(t, err)
 
-	err = s.Remove(uuid)
+	err = s.Remove(uuid, 0)
 	assert.Nil(t, err)
 
 	uuids, entries, err := s.Get(e.SendAt)
@@ -209,7 +209,7 @@ func TestRemoveEntryNotFound(t *testing.T) {
 
 	badUuid := []byte{0xDE, 0xAD, 0xBE, 0xEF}
 
-	err = s.Remove(badUuid)
+	err = s.Remove(badUuid, 0)
 	assert.Error(t, err)
 }
 
@@ -239,7 +239,7 @@ func TestRemoveSameTimeRemovesCorrectEntry(t *testing.T) {
 	assert.Nil(t, err)
 
 	// remove only e2.
-	err = s.Remove(uuid)
+	err = s.Remove(uuid, 0)
 
 	uuids, entries, err := s.Get(e2.SendAt)
 	assert.Nil(t, err)
