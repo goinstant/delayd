@@ -49,7 +49,7 @@ func TestApplyDoesNotReapplyOldVersion(t *testing.T) {
 	assert.Nil(t, err)
 	defer os.Remove(dir)
 
-	s, err := NewStorage(dir, StubSender{})
+	s, err := NewStorage(dir)
 	assert.Nil(t, err)
 	defer s.Close()
 
@@ -69,7 +69,7 @@ func TestApplyDoesNotReapplyOldVersion(t *testing.T) {
 	l = raft.Log{Data: append(v0AddCmd, b...), Index: 1}
 	fsm.Apply(&l)
 
-	_, entries, _ := s.get(e.SendAt)
+	_, entries, _ := s.Get(e.SendAt)
 	assert.Equal(t, len(entries), 1)
 }
 
@@ -78,7 +78,7 @@ func TestApplyDoesNotReapplySameVersion(t *testing.T) {
 	assert.Nil(t, err)
 	defer os.Remove(dir)
 
-	s, err := NewStorage(dir, StubSender{})
+	s, err := NewStorage(dir)
 	assert.Nil(t, err)
 	defer s.Close()
 
@@ -98,7 +98,7 @@ func TestApplyDoesNotReapplySameVersion(t *testing.T) {
 	l = raft.Log{Data: append(v0AddCmd, b...), Index: 1}
 	fsm.Apply(&l)
 
-	_, entries, _ := s.get(e.SendAt)
+	_, entries, _ := s.Get(e.SendAt)
 	assert.Equal(t, len(entries), 1)
 }
 
@@ -107,7 +107,7 @@ func TestApplyAddsEntry(t *testing.T) {
 	assert.Nil(t, err)
 	defer os.Remove(dir)
 
-	s, err := NewStorage(dir, StubSender{})
+	s, err := NewStorage(dir)
 	assert.Nil(t, err)
 	defer s.Close()
 
@@ -124,7 +124,7 @@ func TestApplyAddsEntry(t *testing.T) {
 	l := raft.Log{Data: append(v0AddCmd, b...), Index: 1}
 	fsm.Apply(&l)
 
-	_, entries, _ := s.get(e.SendAt)
+	_, entries, _ := s.Get(e.SendAt)
 	assert.Equal(t, len(entries), 1)
 }
 
@@ -133,7 +133,7 @@ func TestApplyAddsMultipleEntries(t *testing.T) {
 	assert.Nil(t, err)
 	defer os.Remove(dir)
 
-	s, err := NewStorage(dir, StubSender{})
+	s, err := NewStorage(dir)
 	assert.Nil(t, err)
 	defer s.Close()
 
@@ -153,6 +153,6 @@ func TestApplyAddsMultipleEntries(t *testing.T) {
 	l = raft.Log{Data: append(v0AddCmd, b...), Index: 2}
 	fsm.Apply(&l)
 
-	_, entries, _ := s.get(e.SendAt)
+	_, entries, _ := s.Get(e.SendAt)
 	assert.Equal(t, len(entries), 2)
 }

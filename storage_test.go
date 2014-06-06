@@ -10,55 +10,19 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-type StubSender struct {
-}
-
-func (s StubSender) Send(e Entry) error {
-	return nil
-}
-
-func TestNewStorageSetsTimer(t *testing.T) {
-	dir, err := ioutil.TempDir("", "delayd-test")
-	assert.Nil(t, err)
-	defer os.Remove(dir)
-
-	// create a storage instance to populate the db with an entry
-	s, err := NewStorage(dir, StubSender{})
-	assert.Nil(t, err)
-
-	assert.False(t, s.timer.timerRunning)
-
-	e := Entry{
-		Target: "something",
-		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
-	}
-
-	_, err = s.Add(e, 0)
-	assert.Nil(t, err)
-
-	s.Close()
-
-	// create a storage instance to populate the db with an entry
-	s, err = NewStorage(dir, StubSender{})
-	defer s.Close()
-
-	assert.Nil(t, err)
-	assert.True(t, s.timer.timerRunning)
-}
-
 func innerTestAdd(t *testing.T, e Entry) {
 	dir, err := ioutil.TempDir("", "delayd-test")
 	assert.Nil(t, err)
 	defer os.Remove(dir)
 
-	s, err := NewStorage(dir, StubSender{})
+	s, err := NewStorage(dir)
 	assert.Nil(t, err)
 	defer s.Close()
 
 	_, err = s.Add(e, 0)
 	assert.Nil(t, err)
 
-	uuids, entries, err := s.get(e.SendAt)
+	uuids, entries, err := s.Get(e.SendAt)
 	assert.Nil(t, err)
 
 	assert.Equal(t, len(entries), 1)
@@ -100,7 +64,7 @@ func TestAddWithKeyReplacesExisting(t *testing.T) {
 	assert.Nil(t, err)
 	defer os.Remove(dir)
 
-	s, err := NewStorage(dir, StubSender{})
+	s, err := NewStorage(dir)
 	assert.Nil(t, err)
 	defer s.Close()
 
@@ -111,7 +75,7 @@ func TestAddWithKeyReplacesExisting(t *testing.T) {
 	assert.Nil(t, err)
 
 	// since e is before e2, this would return both.
-	uuids, entries, err := s.get(e2.SendAt)
+	uuids, entries, err := s.Get(e2.SendAt)
 	assert.Nil(t, err)
 
 	assert.Equal(t, len(entries), 1)
@@ -150,7 +114,7 @@ func TestAddSameTime(t *testing.T) {
 	assert.Nil(t, err)
 	defer os.Remove(dir)
 
-	s, err := NewStorage(dir, StubSender{})
+	s, err := NewStorage(dir)
 	assert.Nil(t, err)
 	defer s.Close()
 
@@ -161,7 +125,7 @@ func TestAddSameTime(t *testing.T) {
 	assert.Nil(t, err)
 
 	// since e is before e2, this would return both.
-	uuids, entries, err := s.get(e2.SendAt)
+	uuids, entries, err := s.Get(e2.SendAt)
 	assert.Nil(t, err)
 
 	assert.Equal(t, len(uuids), 2)
@@ -183,7 +147,7 @@ func TestAddUpdatesVersion(t *testing.T) {
 	assert.Nil(t, err)
 	defer os.Remove(dir)
 
-	s, err := NewStorage(dir, StubSender{})
+	s, err := NewStorage(dir)
 	assert.Nil(t, err)
 	defer s.Close()
 
@@ -200,17 +164,17 @@ func innerTestRemove(t *testing.T, e Entry) {
 	assert.Nil(t, err)
 	defer os.Remove(dir)
 
-	s, err := NewStorage(dir, StubSender{})
+	s, err := NewStorage(dir)
 	assert.Nil(t, err)
 	defer s.Close()
 
 	uuid, err := s.Add(e, 0)
 	assert.Nil(t, err)
 
-	err = s.remove(uuid)
+	err = s.Remove(uuid)
 	assert.Nil(t, err)
 
-	uuids, entries, err := s.get(e.SendAt)
+	uuids, entries, err := s.Get(e.SendAt)
 	assert.Nil(t, err)
 
 	assert.Equal(t, len(entries), 0)
@@ -239,13 +203,13 @@ func TestRemoveEntryNotFound(t *testing.T) {
 	assert.Nil(t, err)
 	defer os.Remove(dir)
 
-	s, err := NewStorage(dir, StubSender{})
+	s, err := NewStorage(dir)
 	assert.Nil(t, err)
 	defer s.Close()
 
 	badUuid := []byte{0xDE, 0xAD, 0xBE, 0xEF}
 
-	err = s.remove(badUuid)
+	err = s.Remove(badUuid)
 	assert.Error(t, err)
 }
 
@@ -264,7 +228,7 @@ func TestRemoveSameTimeRemovesCorrectEntry(t *testing.T) {
 	assert.Nil(t, err)
 	defer os.Remove(dir)
 
-	s, err := NewStorage(dir, StubSender{})
+	s, err := NewStorage(dir)
 	assert.Nil(t, err)
 	defer s.Close()
 
@@ -275,9 +239,9 @@ func TestRemoveSameTimeRemovesCorrectEntry(t *testing.T) {
 	assert.Nil(t, err)
 
 	// remove only e2.
-	err = s.remove(uuid)
+	err = s.Remove(uuid)
 
-	uuids, entries, err := s.get(e2.SendAt)
+	uuids, entries, err := s.Get(e2.SendAt)
 	assert.Nil(t, err)
 
 	assert.Equal(t, len(uuids), 1)
@@ -291,7 +255,7 @@ func TestNextTime(t *testing.T) {
 	assert.Nil(t, err)
 	defer os.Remove(dir)
 
-	s, err := NewStorage(dir, StubSender{})
+	s, err := NewStorage(dir)
 	assert.Nil(t, err)
 	defer s.Close()
 
@@ -304,7 +268,7 @@ func TestNextTime(t *testing.T) {
 	_, err = s.Add(e, 0)
 	assert.Nil(t, err)
 
-	ok, ts, err := s.nextTime()
+	ok, ts, err := s.NextTime()
 	assert.Nil(t, err)
 	assert.True(t, ok)
 	assert.Equal(t, ts, e.SendAt)
@@ -315,11 +279,11 @@ func TestNextTimeNoEntries(t *testing.T) {
 	assert.Nil(t, err)
 	defer os.Remove(dir)
 
-	s, err := NewStorage(dir, StubSender{})
+	s, err := NewStorage(dir)
 	assert.Nil(t, err)
 	defer s.Close()
 
-	ok, _, err := s.nextTime()
+	ok, _, err := s.NextTime()
 	assert.Nil(t, err)
 	assert.False(t, ok)
 }
@@ -329,7 +293,7 @@ func TestVersionReturnsZeroIfNoEntries(t *testing.T) {
 	assert.Nil(t, err)
 	defer os.Remove(dir)
 
-	s, err := NewStorage(dir, StubSender{})
+	s, err := NewStorage(dir)
 	assert.Nil(t, err)
 	defer s.Close()
 
