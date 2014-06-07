@@ -1,4 +1,4 @@
-package delayd
+package main
 
 import (
 	"io/ioutil"
