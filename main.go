@@ -13,6 +13,14 @@ type stopable interface {
 	Stop()
 }
 
+// Context is an interface for command line arguments context.  Useful for replacing the lib
+// when running a test
+type Context interface {
+	String(str string) string
+	Bool(str string) bool
+	Int(str string) int
+}
+
 func sigHandler(s stopable) {
 	// graceful shutdown for ^C and kill
 	ch := make(chan os.Signal, 1)

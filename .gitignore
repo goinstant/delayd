@@ -4,3 +4,4 @@ delayd
 coverage.out
 
 msg.json
+tests/out.txt

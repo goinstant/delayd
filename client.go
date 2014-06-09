@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/codegangsta/cli"
 	"github.com/streadway/amqp"
 )
 
@@ -32,7 +31,7 @@ type Client struct {
 }
 
 // NewClient creates and returns a Client instance
-func NewClient(c *cli.Context) (cli *Client, err error) {
+func NewClient(c Context) (cli *Client, err error) {
 	cli = new(Client)
 	cli.exchange = c.String("exchange")
 	cli.key = c.String("key")

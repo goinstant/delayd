@@ -2,7 +2,6 @@ package main
 
 import (
 	"github.com/BurntSushi/toml"
-	"github.com/codegangsta/cli"
 )
 
 // AmqpQueue holds configuration for the queue used by the AmqpReceiver
@@ -42,7 +41,7 @@ type Config struct {
 
 // loadConfig load's delayd's toml configuration, based on the command-line
 // provided location, or the default (/etc/delayd.toml)
-func loadConfig(c *cli.Context) (config Config, err error) {
+func loadConfig(c Context) (config Config, err error) {
 	_, err = toml.DecodeFile(c.String("config"), &config)
 
 	return
