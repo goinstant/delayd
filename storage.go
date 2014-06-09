@@ -22,6 +22,8 @@ const (
 	schemaVer = 1 // On-disk storage format version
 )
 
+var allDBs = []string{metaDB, timeDB, keyDB, entryDB}
+
 // Storage is the database backend for persisting Entries via LMDB, and triggering
 // entry emission.
 type Storage struct {
@@ -66,7 +68,7 @@ func (s *Storage) initDB(prefix string) (err error) {
 	}
 
 	// Initialize sub dbs
-	txn, dbis, err := s.startTxn(false, metaDB, timeDB, entryDB, keyDB)
+	txn, dbis, err := s.startTxn(false, allDBs...)
 	if err != nil {
 		txn.Abort()
 		return
