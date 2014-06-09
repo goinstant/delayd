@@ -25,6 +25,7 @@ type Client struct {
 	delay          int64
 	repl           bool
 	outFileDefined bool
+	noWait         bool
 	lock           sync.WaitGroup
 
 	stdin chan []byte
@@ -41,6 +42,7 @@ func NewClient(c *cli.Context) (cli *Client, err error) {
 	cli.outFile = c.String("out")
 	cli.outFileDefined = cli.outFile != ""
 	cli.shutdown = make(chan bool)
+	cli.noWait = c.Bool("no-wait")
 
 	cli.stdin = make(chan []byte)
 
@@ -176,7 +178,7 @@ func (c *Client) Run(conf Config) error {
 
 	for {
 		select {
-		case _ = <-c.shutdown:
+		case <-c.shutdown:
 			return nil
 		case msg := <-c.stdin:
 			err := c.send(msg, conf)
@@ -192,6 +194,13 @@ func (c *Client) Run(conf Config) error {
 func (c *Client) Stop() {
 	log.Println("Shutting down gracefully")
 	log.Println("waiting for AMQP responses to arrive")
-	c.lock.Wait()
+
+	// this is a double negative which sucks, but it makes more sense from the cli
+	// point of view to specifiy --no-wait when you don't want to wait, rather than
+	// defaulting to not waiting
+	if !c.noWait {
+		c.lock.Wait()
+	}
+
 	c.amqpBase.Close()
 }
