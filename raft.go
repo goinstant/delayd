@@ -181,3 +181,8 @@ func (r *Raft) SyncAll() error {
 	future := r.raft.Barrier(0)
 	return future.Error()
 }
+
+// LeaderCh just wraps the raft LeaderCh call
+func (r *Raft) LeaderCh() <-chan bool {
+	return r.raft.LeaderCh()
+}

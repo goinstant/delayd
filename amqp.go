@@ -2,10 +2,13 @@ package main
 
 import (
 	"log"
+	"sync"
 	"time"
 
 	"github.com/streadway/amqp"
 )
+
+const consumerTag = "delayd"
 
 // Shutdown is a base class that is inheritable by any other class that may want
 // to send a shutdown signal over a channel
@@ -49,13 +52,18 @@ func (a *AmqpBase) dial(amqpURL string) (err error) {
 // AmqpReceiver receives delayd commands over amqp
 type AmqpReceiver struct {
 	AmqpBase
-	C    <-chan EntryWrapper
-	rawC <-chan amqp.Delivery
+	C            <-chan EntryWrapper
+	metaMessages chan (<-chan amqp.Delivery)
+	paused       bool
+
+	ac AmqpConfig
+	m  *sync.Mutex
 }
 
 // Close overwrites the base class close because we need to do some additional
 // work for the receiver (signalling the shutdown channel)
 func (a AmqpReceiver) Close() {
+	a.Pause()
 	a.shutdown <- true
 	a.AmqpBase.Close()
 }
@@ -64,6 +72,9 @@ func (a AmqpReceiver) Close() {
 // and starts it listening for commands.
 func NewAmqpReceiver(ac AmqpConfig) (receiver *AmqpReceiver, err error) {
 	receiver = new(AmqpReceiver)
+	receiver.ac = ac
+	receiver.paused = true
+	receiver.m = new(sync.Mutex)
 
 	err = receiver.dial(ac.URL)
 	if err != nil {
@@ -90,32 +101,39 @@ func NewAmqpReceiver(ac AmqpConfig) (receiver *AmqpReceiver, err error) {
 		}
 	}
 
-	//XXX set Qos here to match incoming concurrency
-	messages, err := receiver.channel.Consume(queue.Name, "delayd", ac.Queue.AutoAck, ac.Queue.Exclusive, ac.Queue.NoLocal, ac.Queue.NoWait, nil)
-	if err != nil {
-		log.Println("Could not set up queue consume: ", err)
-		return
-	}
-
 	c := make(chan EntryWrapper)
 	receiver.C = c
 	receiver.shutdown = make(chan bool)
 
+	// messages is a proxy that wraps the 'real' channel, which will be closed
+	// and opened on pause/resume
+	// XXX set buffer to same as amqp QoS
+	messages := make(chan amqp.Delivery, 10)
+	receiver.metaMessages = make(chan (<-chan amqp.Delivery))
+	go func() {
+		var realMessages <-chan amqp.Delivery
+		for {
+			select {
+			case m := <-receiver.metaMessages:
+				// we have a new source of 'real' messages. swap it in.
+				log.Println("Installing new amqp channel")
+				realMessages = m
+			case msg := <-realMessages:
+				messages <- msg
+			}
+		}
+	}()
+
 	go func() {
 		for {
 			select {
-			case _ = <-receiver.shutdown:
+			case <-receiver.shutdown:
 				log.Println("received signal to quit reading amqp, exiting goroutine")
 				return
-			case msg, ok := <-messages:
+			case msg := <-messages:
 				entry := Entry{}
 
 				eWrapper := EntryWrapper{Msg: msg}
-
-				// channel was closed. exit
-				if !ok {
-					return
-				}
 
 				delay, ok := msg.Headers["delayd-delay"].(int64)
 				if !ok {
@@ -163,6 +181,32 @@ func NewAmqpReceiver(ac AmqpConfig) (receiver *AmqpReceiver, err error) {
 	}()
 
 	return
+}
+
+// Start or restart listening for messages on the queue
+func (a AmqpReceiver) Start() (err error) {
+	a.m.Lock()
+	defer a.m.Unlock()
+	if !a.paused {
+		return
+	}
+
+	a.paused = false
+	//XXX set Qos here to match incoming concurrency
+	m, err := a.channel.Consume(a.ac.Queue.Name, consumerTag, a.ac.Queue.AutoAck, a.ac.Queue.Exclusive, a.ac.Queue.NoLocal, a.ac.Queue.NoWait, nil)
+	a.metaMessages <- m
+	return
+}
+
+// Pause listening for messages on the queue
+func (a AmqpReceiver) Pause() error {
+	a.m.Lock()
+	defer a.m.Unlock()
+	if a.paused {
+		return nil
+	}
+	a.paused = true
+	return a.channel.Cancel(consumerTag, false)
 }
 
 // AmqpSender sends delayd entries over amqp after their timeout
