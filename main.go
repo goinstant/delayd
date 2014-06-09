@@ -74,6 +74,7 @@ func main() {
 		cli.StringFlag{"file, f ", "msg.json", "read message from file"},
 		cli.IntFlag{"delay, d", 1000, "expiry time"},
 		cli.StringFlag{"out, o", "", "write delayd response to file"},
+		cli.BoolFlag{"no-wait, n", "do not wait for amqp response before exiting"},
 	}
 
 	app.Commands = []cli.Command{
