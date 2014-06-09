@@ -3,13 +3,14 @@ package main
 import (
 	"io/ioutil"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
 const (
-	unknownAsk = "unknown option asked for"
+	unknownAsk = "unknown option asked for: "
 )
 
 type MockClientContext struct{}
@@ -21,13 +22,13 @@ func (m MockClientContext) String(ask string) string {
 	case "key":
 		return "delayd-key"
 	case "file":
-		return "tests/in.txt"
+		return "tests/in.toml"
 	case "out":
 		return "tests/out.txt"
 	case "config":
 		return "delayd.toml"
 	default:
-		panic(unknownAsk)
+		panic(unknownAsk + ask)
 	}
 }
 
@@ -38,7 +39,7 @@ func (m MockClientContext) Bool(ask string) bool {
 	case "no-wait":
 		return false
 	default:
-		panic(unknownAsk)
+		panic(unknownAsk + ask)
 	}
 }
 
@@ -47,7 +48,7 @@ func (m MockClientContext) Int(ask string) int {
 	case "delay":
 		return 50
 	default:
-		panic(unknownAsk)
+		panic(unknownAsk + ask)
 	}
 }
 
@@ -93,8 +94,9 @@ func TestInAndOut(t *testing.T) {
 	c.Stop()
 	s.Stop()
 
-	f1 := getFileAsString("tests/in.txt")
-	f2 := getFileAsString("tests/out.txt")
+	// remove all whitespace for a more reliable compare
+	f1 := strings.Trim(getFileAsString("tests/expected.txt"), "\n ")
+	f2 := strings.Trim(getFileAsString("tests/out.txt"), "\n ")
 
 	assert.Equal(t, f1, f2)
 

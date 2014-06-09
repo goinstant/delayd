@@ -1,0 +1,14 @@
+[[message]]
+value = "Message 1"
+key = "key1"
+delay = 1000
+
+[[message]]
+value = "Message 2"
+key = "key2"
+delay = 10
+
+[[message]]
+value = "Message 3"
+key = "key3"
+delay = 500
