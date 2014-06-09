@@ -35,6 +35,8 @@ func (m MockClientContext) Bool(ask string) bool {
 	switch ask {
 	case "repl":
 		return false
+	case "no-wait":
+		return false
 	default:
 		panic(unknownAsk)
 	}
