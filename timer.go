@@ -70,10 +70,12 @@ func (t *Timer) Reset(nextSend time.Time, force bool) {
 	t.nextSend = nextSend
 }
 
-func (t *Timer) pause() {
+// Pause the timer, stopping any existing timeouts
+func (t *Timer) Pause() {
 	t.m.Lock()
 	defer t.m.Unlock()
 	t.timerRunning = false
+	t.timer.Stop()
 }
 
 func (t *Timer) timerLoop() {
@@ -87,7 +89,7 @@ func (t *Timer) timerLoop() {
 			if ok {
 				t.Reset(nextSend, true)
 			} else {
-				t.pause()
+				t.Pause()
 			}
 		}
 	}

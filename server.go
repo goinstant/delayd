@@ -51,14 +51,8 @@ func (s *Server) Run(c Config) {
 		log.Fatal("Could not initialize raft: ", err)
 	}
 
-	ok, t, err := s.storage.NextTime()
-	if err != nil {
-		log.Fatal("Could not read initial send time from storage: ", err)
-	}
 	s.timer = NewTimer(s.timerSend)
-	if ok {
-		s.timer.Reset(t, true)
-	}
+	go s.observeLeaderChanges()
 
 	for {
 		eWrapper, ok := <-s.receiver.C
@@ -96,6 +90,40 @@ func (s *Server) Stop() {
 	s.raft.Close()
 
 	log.Println("Terminated.")
+}
+
+func (s *Server) resetTimer() {
+	ok, t, err := s.storage.NextTime()
+	if err != nil {
+		log.Fatal("Could not read initial send time from storage: ", err)
+	}
+	if ok {
+		s.timer.Reset(t, true)
+	}
+}
+
+// Listen for changes to raft for when we transition to and from the leader state
+// and react accordingly.
+func (s *Server) observeLeaderChanges() {
+	for isLeader := range s.raft.LeaderCh() {
+		switch isLeader {
+		case true:
+			log.Println("Became raft leader")
+			s.resetTimer()
+			err := s.receiver.Start()
+			if err != nil {
+				log.Fatal("Error while starting receiver: ", err)
+			}
+
+		case false:
+			log.Println("Lost raft leadership")
+			s.timer.Pause()
+			err := s.receiver.Pause()
+			if err != nil {
+				log.Fatal("Error while starting receiver: ", err)
+			}
+		}
+	}
 }
 
 func (s *Server) timerSend(t time.Time) (next time.Time, ok bool) {
