@@ -153,15 +153,25 @@ func (s *Server) timerSend(t time.Time) (next time.Time, ok bool) {
 
 		err = s.raft.Remove(uuids[i], raftMaxTime)
 		if err != nil {
-			// XXX abort comitting for raft here, so it can retry.
-			log.Fatal("Could not remove entry from db: ", err)
+			// This node is no longer the leader. give up on other amqp sends,
+			// and scheduling the next emission
+			log.Printf("Lost raft leadership during remove. AMQP send will be a duplicate. uuid=%x\n", uuids[i])
+			break
 		}
+	}
+
+	if err != nil {
+		// don't reschedule
+		ok = false
+		return
 	}
 
 	// ensure everyone is up to date
 	err = s.raft.SyncAll()
 	if err != nil {
-		log.Fatal("Could not sync all cluster nodes: ", err)
+		log.Printf("Lost raft leadership during sync after send.")
+		ok = false
+		return
 	}
 
 	ok, next, err = s.storage.NextTime()
