@@ -2,13 +2,18 @@ package main
 
 import (
 	"bufio"
-	"io/ioutil"
 	"log"
 	"os"
 	"sync"
 	"time"
 
 	"github.com/streadway/amqp"
+)
+
+const (
+	delay int = iota
+	exchange
+	key
 )
 
 // Client is the delayd client.  It can relay messages to the server for easy
@@ -27,11 +32,12 @@ type Client struct {
 	noWait         bool
 	lock           sync.WaitGroup
 
-	stdin chan []byte
+	stdin chan ClientMessages
 }
 
 // NewClient creates and returns a Client instance
 func NewClient(c Context) (cli *Client, err error) {
+
 	cli = new(Client)
 	cli.exchange = c.String("exchange")
 	cli.key = c.String("key")
@@ -43,35 +49,39 @@ func NewClient(c Context) (cli *Client, err error) {
 	cli.shutdown = make(chan bool)
 	cli.noWait = c.Bool("no-wait")
 
-	cli.stdin = make(chan []byte)
+	cli.stdin = make(chan ClientMessages)
 
 	return cli, nil
 }
 
-func (c *Client) send(msg []byte, conf Config) error {
-	log.Println("SENDING:", string(msg[:]))
+func (c *Client) send(cliMessages ClientMessages, conf Config, params ...int) error {
 
-	pub := amqp.Publishing{
-		DeliveryMode: amqp.Persistent,
-		Timestamp:    time.Now(),
-		ContentType:  "text/plain",
-		Headers: amqp.Table{
-			"delayd-delay":  c.delay,
-			"delayd-target": c.exchange,
-			"delayd-key":    c.key,
-		},
-		Body: msg,
+	for _, msg := range cliMessages.Message {
+		log.Println("SENDING:", msg.Value)
+
+		pub := amqp.Publishing{
+			DeliveryMode: amqp.Persistent,
+			Timestamp:    time.Now(),
+			ContentType:  "text/plain",
+			Headers: amqp.Table{
+				"delayd-delay":  msg.Delay,
+				"delayd-target": c.exchange,
+				"delayd-key":    msg.Key,
+			},
+			Body: []byte(msg.Value),
+		}
+
+		exchange := conf.Amqp.Exchange.Name
+		queue := conf.Amqp.Queue.Name
+		err := c.amqpBase.channel.Publish(exchange, queue, true, false, pub)
+		if err != nil {
+			return err
+		}
+
+		c.lock.Add(1)
 	}
 
-	exchange := conf.Amqp.Exchange.Name
-	queue := conf.Amqp.Queue.Name
-	err := c.amqpBase.channel.Publish(exchange, queue, true, false, pub)
-	if err != nil {
-		return err
-	}
-
-	c.lock.Add(1)
-	log.Println("SENT")
+	log.Println("ALL MESSAGES SENT")
 
 	return nil
 }
@@ -86,17 +96,26 @@ func (c *Client) listenInput() {
 				log.Fatal("Error reading from STDIN")
 			}
 
-			c.stdin <- line
+			cliMessages := ClientMessages{
+				Message: []Message{
+					{
+						Value: string(line[:]),
+						Key:   c.key,
+						Delay: c.delay,
+					},
+				},
+			}
+
+			c.stdin <- cliMessages
 		}
 	}
 
-	f := c.file
-	dat, err := ioutil.ReadFile(f)
+	cliMessages, err := loadMessages(c.file)
 	if err != nil {
-		log.Fatalf("Error reading from file: %s, got error: %s", f, err)
+		log.Fatalf("Error reading from file: %s, got error: %s", c.file, err)
 	}
 
-	c.stdin <- dat
+	c.stdin <- cliMessages
 	c.shutdown <- true
 }
 
@@ -112,7 +131,8 @@ func (c *Client) listenResponse(messages <-chan amqp.Delivery) {
 			}
 
 			defer f.Close()
-			_, err = f.Write(msg.Body)
+			// concat a newline for readability
+			_, err = f.Write(append(msg.Body, []byte("\n")...))
 			if err != nil {
 				panic(err)
 			}
