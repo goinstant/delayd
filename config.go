@@ -30,6 +30,7 @@ type AmqpExchange struct {
 type AmqpConfig struct {
 	URL      string       `toml:"url"`
 	Exchange AmqpExchange `toml:"exchange"`
+	Qos      int          `toml:"qos"`
 	Queue    AmqpQueue    `toml:"queue"`
 }
 
