@@ -81,6 +81,12 @@ func NewAmqpReceiver(ac AmqpConfig) (receiver *AmqpReceiver, err error) {
 		return
 	}
 
+	log.Println("Setting channel QoS to", ac.Qos)
+	err = receiver.channel.Qos(ac.Qos, 0, false)
+	if err != nil {
+		return
+	}
+
 	err = receiver.channel.ExchangeDeclare(ac.Exchange.Name, ac.Exchange.Kind, ac.Exchange.Durable, ac.Exchange.AutoDelete, ac.Exchange.Internal, ac.Exchange.NoWait, nil)
 	if err != nil {
 		log.Println("Could not declare AMQP Exchange: ", err)
@@ -107,8 +113,7 @@ func NewAmqpReceiver(ac AmqpConfig) (receiver *AmqpReceiver, err error) {
 
 	// messages is a proxy that wraps the 'real' channel, which will be closed
 	// and opened on pause/resume
-	// XXX set buffer to same as amqp QoS
-	messages := make(chan amqp.Delivery, 10)
+	messages := make(chan amqp.Delivery, ac.Qos)
 	receiver.metaMessages = make(chan (<-chan amqp.Delivery))
 	go func() {
 		var realMessages <-chan amqp.Delivery
