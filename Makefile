@@ -24,6 +24,9 @@ update-deps:
 
 
 test:
+	go test -short ./...
+
+testint:
 	go test ./...
 
 check: lint
@@ -50,4 +53,4 @@ funccov:
 	go test -coverprofile /tmp/delayd-coverprof.cov github.com/goinstant/delayd
 	go tool cover -func /tmp/delayd-coverprof.cov
 
-ci: check test
+ci: check testint
