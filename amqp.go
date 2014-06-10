@@ -1,7 +1,6 @@
 package main
 
 import (
-	"log"
 	"sync"
 	"time"
 
@@ -36,13 +35,13 @@ func (a AmqpBase) Close() {
 func (a *AmqpBase) dial(amqpURL string) (err error) {
 	a.connection, err = amqp.Dial(amqpURL)
 	if err != nil {
-		log.Println("Could not connect to AMQP: ", err)
+		Error("Could not connect to AMQP: ", err)
 		return
 	}
 
 	a.channel, err = a.connection.Channel()
 	if err != nil {
-		log.Println("Could not open AMQP channel: ", err)
+		Error("Could not open AMQP channel: ", err)
 		return
 	}
 
@@ -81,7 +80,7 @@ func NewAmqpReceiver(ac AmqpConfig) (receiver *AmqpReceiver, err error) {
 		return
 	}
 
-	log.Println("Setting channel QoS to", ac.Qos)
+	Debug("Setting channel QoS to", ac.Qos)
 	err = receiver.channel.Qos(ac.Qos, 0, false)
 	if err != nil {
 		return
@@ -89,21 +88,22 @@ func NewAmqpReceiver(ac AmqpConfig) (receiver *AmqpReceiver, err error) {
 
 	err = receiver.channel.ExchangeDeclare(ac.Exchange.Name, ac.Exchange.Kind, ac.Exchange.Durable, ac.Exchange.AutoDelete, ac.Exchange.Internal, ac.Exchange.NoWait, nil)
 	if err != nil {
-		log.Println("Could not declare AMQP Exchange: ", err)
+		Error("Could not declare AMQP Exchange: ", err)
 		return
 	}
 
 	queue, err := receiver.channel.QueueDeclare(ac.Queue.Name, ac.Queue.Durable, ac.Queue.AutoDelete, ac.Queue.Exclusive, ac.Queue.NoWait, nil)
 	if err != nil {
-		log.Println("Could not declare AMQP Queue: ", err)
+		Error("Could not declare AMQP Queue: ", err)
 		return
 	}
 
 	for _, exch := range ac.Queue.Bind {
-		log.Printf("Binding queue %s to exchange %s", queue.Name, exch)
+		Debug("Binding queue %s to exchange %s", queue.Name, exch)
 		err = receiver.channel.QueueBind(queue.Name, "delayd", exch, ac.Queue.NoWait, nil)
 		if err != nil {
-			log.Fatalf("Error binding queue %s to Exchange %s", queue.Name, exch)
+			// XXX un-fatal this like the other errors
+			Fatalf("Error binding queue %s to Exchange %s", queue.Name, exch)
 		}
 	}
 
@@ -121,7 +121,7 @@ func NewAmqpReceiver(ac AmqpConfig) (receiver *AmqpReceiver, err error) {
 			select {
 			case m := <-receiver.metaMessages:
 				// we have a new source of 'real' messages. swap it in.
-				log.Println("Installing new amqp channel")
+				Debug("Installing new amqp channel")
 				realMessages = m
 			case msg := <-realMessages:
 				messages <- msg
@@ -133,7 +133,7 @@ func NewAmqpReceiver(ac AmqpConfig) (receiver *AmqpReceiver, err error) {
 		for {
 			select {
 			case <-receiver.shutdown:
-				log.Println("received signal to quit reading amqp, exiting goroutine")
+				Debug("received signal to quit reading amqp, exiting goroutine")
 				return
 			case msg := <-messages:
 				entry := Entry{}
@@ -142,7 +142,7 @@ func NewAmqpReceiver(ac AmqpConfig) (receiver *AmqpReceiver, err error) {
 
 				delay, ok := msg.Headers["delayd-delay"].(int64)
 				if !ok {
-					log.Println("Bad/missing delay. discarding message")
+					Warn("Bad/missing delay. discarding message")
 					eWrapper.Done(false)
 					continue
 				}
@@ -150,7 +150,7 @@ func NewAmqpReceiver(ac AmqpConfig) (receiver *AmqpReceiver, err error) {
 
 				entry.Target, ok = msg.Headers["delayd-target"].(string)
 				if !ok {
-					log.Println("Bad/missing target. discarding message")
+					Warn("Bad/missing target. discarding message")
 					eWrapper.Done(false)
 					continue
 				}

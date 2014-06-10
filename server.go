@@ -1,7 +1,6 @@
 package main
 
 import (
-	"log"
 	"os"
 	"time"
 
@@ -22,33 +21,33 @@ type Server struct {
 
 // Run initializes the Server from a Config, and begins its main loop.
 func (s *Server) Run(c Config) {
-	log.Println("Starting delayd")
+	Info("Starting delayd")
 
-	log.Println("Creating data dir: ", c.DataDir)
+	Debug("Creating data dir: ", c.DataDir)
 	err := os.MkdirAll(c.DataDir, 0755)
 
 	if err != nil {
-		log.Fatal("Error creating data dir: ", err)
+		Fatal("Error creating data dir: ", err)
 	}
 
 	s.receiver, err = NewAmqpReceiver(c.Amqp)
 	if err != nil {
-		log.Fatal("Could not initialize receiver: ", err)
+		Fatal("Could not initialize receiver: ", err)
 	}
 
 	s.sender, err = NewAmqpSender(c.Amqp.URL)
 	if err != nil {
-		log.Fatal("Could not initialize sender: ", err)
+		Fatal("Could not initialize sender: ", err)
 	}
 
 	s.storage, err = NewStorage(c.DataDir)
 	if err != nil {
-		log.Fatal("Could not initialize storage backend: ", err)
+		Fatal("Could not initialize storage backend: ", err)
 	}
 
 	s.raft, err = NewRaft(c.DataDir, s.storage)
 	if err != nil {
-		log.Fatal("Could not initialize raft: ", err)
+		Fatal("Could not initialize raft: ", err)
 	}
 
 	s.timer = NewTimer(s.timerSend)
@@ -59,13 +58,13 @@ func (s *Server) Run(c Config) {
 		entry := eWrapper.Entry
 		// XXX cleanup needed here before exit
 		if !ok {
-			log.Fatal("Receiver Consumption failed!")
+			Fatal("Receiver Consumption failed!")
 		}
 
-		log.Println("Got entry: ", entry)
+		Debug("Got entry: ", entry)
 		b, err := entry.ToBytes()
 		if err != nil {
-			log.Println("Error encoding entry", err)
+			Error("Error encoding entry", err)
 			continue
 		}
 
@@ -81,7 +80,7 @@ func (s *Server) Run(c Config) {
 
 // Stop shuts down the Server cleanly. Order of the Close calls is important.
 func (s *Server) Stop() {
-	log.Println("Shutting down gracefully.")
+	Info("Shutting down gracefully.")
 
 	// stop triggering new changes to the FSM
 	s.receiver.Close()
@@ -93,13 +92,13 @@ func (s *Server) Stop() {
 	s.raft.Close()
 	s.storage.Close()
 
-	log.Println("Terminated.")
+	Info("Terminated.")
 }
 
 func (s *Server) resetTimer() {
 	ok, t, err := s.storage.NextTime()
 	if err != nil {
-		log.Fatal("Could not read initial send time from storage: ", err)
+		Fatal("Could not read initial send time from storage: ", err)
 	}
 	if ok {
 		s.timer.Reset(t, true)
@@ -112,19 +111,19 @@ func (s *Server) observeLeaderChanges() {
 	for isLeader := range s.raft.LeaderCh() {
 		switch isLeader {
 		case true:
-			log.Println("Became raft leader")
+			Debug("Became raft leader")
 			s.resetTimer()
 			err := s.receiver.Start()
 			if err != nil {
-				log.Fatal("Error while starting receiver: ", err)
+				Fatal("Error while starting receiver: ", err)
 			}
 
 		case false:
-			log.Println("Lost raft leadership")
+			Debug("Lost raft leadership")
 			s.timer.Pause()
 			err := s.receiver.Pause()
 			if err != nil {
-				log.Fatal("Error while starting receiver: ", err)
+				Fatal("Error while starting receiver: ", err)
 			}
 		}
 	}
@@ -133,10 +132,10 @@ func (s *Server) observeLeaderChanges() {
 func (s *Server) timerSend(t time.Time) (next time.Time, ok bool) {
 	uuids, entries, err := s.storage.Get(t)
 	if err != nil {
-		log.Fatal("Could not read entries from db: ", err)
+		Fatal("Could not read entries from db: ", err)
 	}
 
-	log.Printf("Sending %d entries\n", len(entries))
+	Info("Sending %d entries\n", len(entries))
 	for i, e := range entries {
 		err = s.sender.Send(e)
 
@@ -149,9 +148,9 @@ func (s *Server) timerSend(t time.Time) (next time.Time, ok bool) {
 
 		if err, ok := err.(*amqp.Error); ok {
 			if err.Code != 504 {
-				log.Fatal("Could not send entry: ", err)
+				Fatal("Could not send entry: ", err)
 			} else {
-				log.Printf("channel/connection not set up for exchange `%s`, message will be deleted", e.Target)
+				Warn("channel/connection not set up for exchange `%s`, message will be deleted", e.Target)
 			}
 		}
 
@@ -159,7 +158,7 @@ func (s *Server) timerSend(t time.Time) (next time.Time, ok bool) {
 		if err != nil {
 			// This node is no longer the leader. give up on other amqp sends,
 			// and scheduling the next emission
-			log.Printf("Lost raft leadership during remove. AMQP send will be a duplicate. uuid=%x\n", uuids[i])
+			Warn("Lost raft leadership during remove. AMQP send will be a duplicate. uuid=%x\n", uuids[i])
 			break
 		}
 	}
@@ -173,14 +172,14 @@ func (s *Server) timerSend(t time.Time) (next time.Time, ok bool) {
 	// ensure everyone is up to date
 	err = s.raft.SyncAll()
 	if err != nil {
-		log.Printf("Lost raft leadership during sync after send.")
+		Warn("Lost raft leadership during sync after send.")
 		ok = false
 		return
 	}
 
 	ok, next, err = s.storage.NextTime()
 	if err != nil {
-		log.Fatal("Could not read next time from db: ", err)
+		Fatal("Could not read next time from db: ", err)
 	}
 
 	return

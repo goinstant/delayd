@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"log"
 	"os"
 	"sync"
 	"time"
@@ -57,7 +56,7 @@ func NewClient(c Context) (cli *Client, err error) {
 func (c *Client) send(cliMessages ClientMessages, conf Config, params ...int) error {
 
 	for _, msg := range cliMessages.Message {
-		log.Println("SENDING:", msg.Value)
+		Debug("SENDING:", msg.Value)
 
 		pub := amqp.Publishing{
 			DeliveryMode: amqp.Persistent,
@@ -81,19 +80,19 @@ func (c *Client) send(cliMessages ClientMessages, conf Config, params ...int) er
 		c.lock.Add(1)
 	}
 
-	log.Println("ALL MESSAGES SENT")
+	Debug("ALL MESSAGES SENT")
 
 	return nil
 }
 
 func (c *Client) listenInput() {
 	if c.repl {
-		log.Println("Waiting for STDIN")
+		Info("Waiting for STDIN")
 		bio := bufio.NewReader(os.Stdin)
 		for {
 			line, err := bio.ReadBytes('\n')
 			if err != nil {
-				log.Fatal("Error reading from STDIN")
+				Fatal("Error reading from STDIN")
 			}
 
 			cliMessages := ClientMessages{
@@ -112,7 +111,7 @@ func (c *Client) listenInput() {
 
 	cliMessages, err := loadMessages(c.file)
 	if err != nil {
-		log.Fatalf("Error reading from file: %s, got error: %s", c.file, err)
+		Fatalf("Error reading from file: %s, got error: %s", c.file, err)
 	}
 
 	c.stdin <- cliMessages
@@ -137,9 +136,9 @@ func (c *Client) listenResponse(messages <-chan amqp.Delivery) {
 				panic(err)
 			}
 
-			log.Println("Wrote response to", c.outFile)
+			Info("Wrote response to", c.outFile)
 		} else {
-			log.Println("MSG RECEIVED:", string(msg.Body[:]))
+			Info("MSG RECEIVED:", string(msg.Body[:]))
 		}
 
 		defer func() {
@@ -160,34 +159,34 @@ func (c *Client) Run(conf Config) error {
 
 	conn, err := amqp.Dial(conf.Amqp.URL)
 	if err != nil {
-		log.Fatal("Unable to dial AMQP:", err)
+		Fatal("Unable to dial AMQP:", err)
 	}
 
 	amqpBase.connection = conn
 	ch, err := amqpBase.connection.Channel()
 	if err != nil {
-		log.Fatal("Unable to create amqp channel:", err)
+		Fatal("Unable to create amqp channel:", err)
 	}
 
 	amqpBase.channel = ch
 	c.amqpBase = amqpBase
 
 	exch := conf.Amqp.Exchange
-	log.Println("declaring exchange:", c.exchange)
+	Debug("declaring exchange:", c.exchange)
 	err = ch.ExchangeDeclare(c.exchange, exch.Kind, exch.Durable, exch.AutoDelete, exch.Internal, exch.NoWait, nil)
 	if err != nil {
-		log.Fatal("Unable to declare exchange:", err)
+		Fatal("Unable to declare exchange:", err)
 	}
 
 	q := conf.Amqp.Queue
 	queue, err := ch.QueueDeclare("", q.Durable, q.AutoDelete, q.Exclusive, q.NoWait, nil)
 	if err != nil {
-		log.Fatal("Unable to declare queue:", err)
+		Fatal("Unable to declare queue:", err)
 	}
 
 	err = ch.QueueBind(queue.Name, "", c.exchange, q.NoWait, nil)
 	if err != nil {
-		log.Fatal("Unable to bind queue to exchange:", err)
+		Fatal("Unable to bind queue to exchange:", err)
 	}
 
 	messages, err := ch.Consume(queue.Name, "delayd", true, q.Exclusive, q.NoLocal, q.NoLocal, nil)
@@ -203,7 +202,7 @@ func (c *Client) Run(conf Config) error {
 			err := c.send(msg, conf)
 
 			if err != nil {
-				log.Println("Got Err:", err)
+				Warn("Got Err:", err)
 			}
 		}
 	}
@@ -211,8 +210,8 @@ func (c *Client) Run(conf Config) error {
 
 // Stop is resonsible for shutting down all services used by the Client
 func (c *Client) Stop() {
-	log.Println("Shutting down gracefully")
-	log.Println("waiting for AMQP responses to arrive")
+	Info("Shutting down gracefully")
+	Info("waiting for AMQP responses to arrive")
 
 	// this is a double negative which sucks, but it makes more sense from the cli
 	// point of view to specifiy --no-wait when you don't want to wait, rather than

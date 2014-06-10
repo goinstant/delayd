@@ -2,7 +2,6 @@ package main
 
 import (
 	"io"
-	"log"
 	"net"
 	"os"
 	"path"
@@ -34,46 +33,42 @@ type FSM struct {
 func (fsm *FSM) Apply(l *raft.Log) interface{} {
 	logVer := l.Data[0]
 	if logVer != logSchemaVersion {
-		log.Printf("Unknown log schema version seen. version=%d", logVer)
-		panic("Unknown log schema version!")
+		Panicf("Unknown log schema version seen. version=%d", logVer)
 	}
 
 	version, err := fsm.store.Version()
 	if err != nil {
-		log.Println("Error reading version: ", err)
-		return nil
+		Panic("Error reading version: ", err)
 	}
 
 	// this doesn't strictly check for version + 1 as raft has internal commands
 	// that go on the log, too.
 	if l.Index <= version {
-		log.Printf("Skipping apply for old version (did you restart?) existing=%d new=%d\n", version, l.Index)
+		Debug("Skipping apply for old version (did you restart?) existing=%d new=%d\n", version, l.Index)
 		return nil
 	}
 
 	cmdType := l.Data[1]
 	switch cmdType {
 	case byte(addCmd):
-		log.Println("Applying add command")
+		Debug("Applying add command")
 		entry, err := entryFromBytes(l.Data[2:])
 		if err != nil {
-			log.Println("Error decoding entry: ", err)
-			panic("Could not decode entry!")
+			Panic("Error decoding entry: ", err)
 		}
 
 		_, err = fsm.store.Add(entry, l.Index)
 		if err != nil {
-			log.Println("Error storing entry: ", err)
+			Error("Error storing entry: ", err)
 		}
 	case byte(rmCmd):
-		log.Println("Applying rm command")
+		Debug("Applying rm command")
 		err = fsm.store.Remove(l.Data[2:], l.Index)
 		if err != nil {
-			log.Println("Error removing entry: ", err)
+			Error("Error removing entry: ", err)
 		}
 	default:
-		log.Printf("Unknown command type seen. type=%d", cmdType)
-		panic("Unknown command type!")
+		Panicf("Unknown command type seen. type=%d", cmdType)
 	}
 
 	return nil
@@ -103,24 +98,24 @@ func NewRaft(prefix string, storage *Storage) (r *Raft, err error) {
 
 	err = os.MkdirAll(raftDir, 0755)
 	if err != nil {
-		log.Fatal("Could not create raft storage dir: ", err)
+		Fatal("Could not create raft storage dir: ", err)
 	}
 
 	fss, err := raft.NewFileSnapshotStore(raftDir, 1, nil)
 	if err != nil {
-		log.Println("Could not initialize raft snapshot store: ", err)
+		Error("Could not initialize raft snapshot store: ", err)
 		return
 	}
 
 	advertise, err := net.ResolveTCPAddr("tcp", ":9998")
 	if err != nil {
-		log.Println("Could not lookup raft advertise address: ", err)
+		Error("Could not lookup raft advertise address: ", err)
 		return
 	}
 
 	r.transport, err = raft.NewTCPTransport("0.0.0.0:9999", advertise, 3, 10*time.Second, nil)
 	if err != nil {
-		log.Println("Could not create raft transport: ", err)
+		Error("Could not create raft transport: ", err)
 		return
 	}
 
@@ -128,7 +123,7 @@ func NewRaft(prefix string, storage *Storage) (r *Raft, err error) {
 
 	r.mdb, err = raftmdb.NewMDBStore(raftDir)
 	if err != nil {
-		log.Println("Could not create raft store: ", err)
+		Error("Could not create raft store: ", err)
 		return
 	}
 
@@ -139,7 +134,7 @@ func NewRaft(prefix string, storage *Storage) (r *Raft, err error) {
 
 	r.raft, err = raft.NewRaft(config, &fsm, r.mdb, r.mdb, fss, peers, r.transport)
 	if err != nil {
-		log.Println("Could not initialize raft: ", err)
+		Error("Could not initialize raft: ", err)
 		return
 	}
 
@@ -151,7 +146,7 @@ func (r *Raft) Close() {
 	r.transport.Close()
 	future := r.raft.Shutdown()
 	if err := future.Error(); err != nil {
-		log.Println("Error shutting down raft: ", err)
+		Error("Error shutting down raft: ", err)
 	}
 	r.mdb.Close()
 }

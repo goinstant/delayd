@@ -2,7 +2,6 @@ package main
 
 import (
 	"github.com/BurntSushi/toml"
-	"log"
 )
 
 // Message holds a message to send to delayd server
@@ -18,7 +17,7 @@ type ClientMessages struct {
 }
 
 func loadMessages(path string) (config ClientMessages, err error) {
-	log.Println("reading", path)
+	Debug("reading", path)
 	_, err = toml.DecodeFile(path, &config)
 	return config, err
 }
