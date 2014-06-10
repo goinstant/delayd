@@ -92,7 +92,8 @@ func (s *Storage) initDB(prefix string) (err error) {
 // Close gracefully shuts down a storage instance. Before calling it, ensure
 // that all in-flight requests have been processed.
 func (s *Storage) Close() {
-	// we trust that mdb will wait for transactions to complete (also be clean)
+	// mdb will segfault if any transactions are in process when this is called,
+	// so ensure users of storage are stopped first.
 	s.env.Close()
 }
 

@@ -83,11 +83,15 @@ func (s *Server) Run(c Config) {
 func (s *Server) Stop() {
 	log.Println("Shutting down gracefully.")
 
+	// stop triggering new changes to the FSM
 	s.receiver.Close()
-	s.storage.Close()
+	s.timer.Stop()
+
+	// with no FSM stimulus, we don't need to send.
 	s.sender.Close()
 
 	s.raft.Close()
+	s.storage.Close()
 
 	log.Println("Terminated.")
 }

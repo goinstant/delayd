@@ -45,9 +45,7 @@ func NewTimer(sendFunc SendFunc) (t *Timer) {
 // Stop gracefully stops the timer, ensuring any running processing is complete.
 func (t *Timer) Stop() {
 	t.shutdown <- false
-	t.m.Lock()
-	defer t.m.Unlock()
-	t.timer.Stop()
+	t.Pause()
 }
 
 // Reset resets the timer to nextSend, if the timer is not running, or if nextSend is before
