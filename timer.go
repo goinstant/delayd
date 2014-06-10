@@ -1,7 +1,6 @@
 package main
 
 import (
-	"log"
 	"sync"
 	"time"
 )
@@ -64,7 +63,7 @@ func (t *Timer) Reset(nextSend time.Time, force bool) {
 		return
 	}
 
-	log.Println("Setting next timer for: ", t)
+	Debug("Setting next timer for: ", nextSend)
 	t.timerRunning = true
 	t.timer.Reset(nextSend.Sub(time.Now()))
 	t.nextSend = nextSend

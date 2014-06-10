@@ -22,7 +22,7 @@ func (e *EntryWrapper) Done(succ bool) {
 	// If we cannot ACK a message then we are pretty much stuck, we won't
 	// be able to receive any additional messages
 	pan := func() {
-		panic("Unable to ACK/NACK amqp message")
+		Panic("Unable to ACK/NACK amqp message")
 	}
 
 	if succ {

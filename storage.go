@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
-	"log"
 	"os"
 	"path"
 	"time"
@@ -145,7 +144,7 @@ func (s *Storage) Add(e Entry, index uint64) (uuid []byte, err error) {
 	}
 
 	if e.Key != "" {
-		log.Println("Entry has key: ", e.Key)
+		Debug("Entry has key: ", e.Key)
 
 		var ouuid []byte
 		ouuid, err = txn.Get(dbis[2], []byte(e.Key))
@@ -155,7 +154,7 @@ func (s *Storage) Add(e Entry, index uint64) (uuid []byte, err error) {
 		}
 
 		if err == nil {
-			log.Println("Exising key found; removing.")
+			Debug("Exising key found; removing.")
 
 			err = s.innerRemove(txn, dbis, ouuid)
 			if err != nil {
@@ -204,20 +203,20 @@ func (s *Storage) Add(e Entry, index uint64) (uuid []byte, err error) {
 func (s *Storage) Get(t time.Time) (uuids [][]byte, entries []Entry, err error) {
 	txn, dbis, err := s.startTxn(true, timeDB, entryDB)
 	if err != nil {
-		log.Println("Error creating transaction: ", err)
+		Error("Error creating transaction: ", err)
 		return
 	}
 	defer txn.Abort()
 
 	cursor, err := txn.CursorOpen(dbis[0])
 	if err != nil {
-		log.Println("Error getting cursor for get entry: ", err)
+		Error("Error getting cursor for get entry: ", err)
 		return
 	}
 	defer cursor.Close()
 
 	sk := uint64(t.UnixNano())
-	log.Println("Looking for: ", t, t.UnixNano())
+	Debug("Looking for: ", t, t.UnixNano())
 
 	for {
 		var k, uuid, v []byte
@@ -259,14 +258,14 @@ func (s *Storage) NextTime() (ok bool, t time.Time, err error) {
 	ok = true
 	txn, dbis, err := s.startTxn(true, timeDB)
 	if err != nil {
-		log.Println("Error creating transaction: ", err)
+		Error("Error creating transaction: ", err)
 		return
 	}
 	defer txn.Abort()
 
 	cursor, err := txn.CursorOpen(dbis[0])
 	if err != nil {
-		log.Println("Error getting cursor for next time: ", err)
+		Error("Error getting cursor for next time: ", err)
 		return
 	}
 	defer cursor.Close()
@@ -278,7 +277,7 @@ func (s *Storage) NextTime() (ok bool, t time.Time, err error) {
 		return
 	}
 	if err != nil {
-		log.Println("Error reading next time from db: ", err)
+		Error("Error reading next time from db: ", err)
 		return
 	}
 
@@ -290,33 +289,33 @@ func (s *Storage) NextTime() (ok bool, t time.Time, err error) {
 func (s *Storage) innerRemove(txn *mdb.Txn, dbis []mdb.DBI, uuid []byte) (err error) {
 	be, err := txn.Get(dbis[1], uuid)
 	if err != nil {
-		log.Println("Could not read entry: ", err)
+		Error("Could not read entry: ", err)
 		return
 	}
 
 	e, err := entryFromBytes(be)
 	if err != nil {
-		log.Println("Could not parse entry: ", err)
+		Error("Could not parse entry: ", err)
 		return
 	}
 
 	k := uint64ToBytes(uint64(e.SendAt.UnixNano()))
 	err = txn.Del(dbis[0], k, uuid)
 	if err != nil {
-		log.Println("Could not delete from time series: ", err)
+		Error("Could not delete from time series: ", err)
 		return
 	}
 
 	err = txn.Del(dbis[1], uuid, nil)
 	if err != nil {
-		log.Println("Could not delete entry: ", err)
+		Error("Could not delete entry: ", err)
 		return
 	}
 
 	// check if the key exists before deleting.
 	cursor, err := txn.CursorOpen(dbis[2])
 	if err != nil {
-		log.Println("Error getting cursor for keys: ", err)
+		Error("Error getting cursor for keys: ", err)
 		return
 	}
 	defer cursor.Close()
@@ -326,13 +325,13 @@ func (s *Storage) innerRemove(txn *mdb.Txn, dbis []mdb.DBI, uuid []byte) (err er
 		err = nil
 		return
 	} else if err != nil {
-		log.Println("Error reading cursor: ", err)
+		Error("Error reading cursor: ", err)
 		return
 	}
 
 	err = txn.Del(dbis[2], []byte(e.Key), nil)
 	if err != nil {
-		log.Println("Could not delete from keys: ", err)
+		Error("Could not delete from keys: ", err)
 		return
 	}
 
@@ -368,14 +367,14 @@ func (s *Storage) Remove(uuid []byte, index uint64) (err error) {
 func (s *Storage) Version() (version uint64, err error) {
 	txn, dbis, err := s.startTxn(true, metaDB)
 	if err != nil {
-		log.Println("Error creating transaction: ", err)
+		Error("Error creating transaction: ", err)
 		return
 	}
 	defer txn.Abort()
 
 	cursor, err := txn.CursorOpen(dbis[0])
 	if err != nil {
-		log.Println("Error getting cursor for version: ", err)
+		Error("Error getting cursor for version: ", err)
 		return
 	}
 	defer cursor.Close()
@@ -385,7 +384,7 @@ func (s *Storage) Version() (version uint64, err error) {
 		err = nil
 		return
 	} else if err != nil {
-		log.Println("Error reading cursor for version: ", err)
+		Error("Error reading cursor for version: ", err)
 		return
 	}
 

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -34,16 +33,16 @@ func sigHandler(s stopable) {
 }
 
 func executeCli(c *cli.Context) {
-	log.Println("Starting delayd.Client")
+	Info("Starting delayd.Client")
 
 	config, err := loadConfig(c)
 	if err != nil {
-		log.Fatal("Unable to read config file: ", err)
+		Fatal("Unable to read config file: ", err)
 	}
 
 	cli, err := NewClient(c)
 	if err != nil {
-		log.Fatal("error creating client")
+		Fatal("error creating client")
 	}
 
 	sigHandler(cli)
@@ -53,11 +52,11 @@ func executeCli(c *cli.Context) {
 }
 
 func execute(c *cli.Context) {
-	log.Println("Starting delayd")
+	Info("Starting delayd")
 
 	config, err := loadConfig(c)
 	if err != nil {
-		log.Fatal("Unable to read config file: ", err)
+		Fatal("Unable to read config file: ", err)
 	}
 
 	s := Server{}
