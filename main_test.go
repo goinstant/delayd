@@ -76,15 +76,10 @@ func TestInAndOut(t *testing.T) {
 	m := MockClientContext{}
 	conf, err := loadConfig(m)
 
-	// travis can't make a dir under /var/lib, but we can just put it
-	// in its home dir
-	if os.Getenv("TRAVIS") != "" {
-		conf.DataDir = "delayd"
-	}
-
-	if err != nil {
-		panic(err)
-	}
+	// create an ephemeral location for data storage during tests
+	conf.DataDir, err = ioutil.TempDir("", "delayd-testint")
+	assert.Nil(t, err)
+	defer os.Remove(conf.DataDir)
 
 	s := Server{}
 	go s.Run(conf)
