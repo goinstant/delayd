@@ -69,6 +69,10 @@ func cleanup(path string) {
 }
 
 func TestInAndOut(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping test")
+	}
+
 	m := MockClientContext{}
 	conf, err := loadConfig(m)
 
