@@ -17,6 +17,9 @@ type Command uint8
 const (
 	addCmd Command = iota
 	rmCmd
+
+	uuidOffset  = 2
+	entryOffset = 18
 )
 
 const logSchemaVersion = 0x0
@@ -40,18 +43,21 @@ func (fsm *FSM) Apply(l *raft.Log) interface{} {
 	switch cmdType {
 	case byte(addCmd):
 		Debug("Applying add command")
-		entry, err := entryFromBytes(l.Data[2:])
+
+		uuid := l.Data[uuidOffset:entryOffset]
+
+		entry, err := entryFromBytes(l.Data[entryOffset:])
 		if err != nil {
 			Panic("Error decoding entry: ", err)
 		}
 
-		_, err = fsm.store.Add(entry, l.Index)
+		err = fsm.store.Add(uuid, entry)
 		if err != nil {
 			Error("Error storing entry: ", err)
 		}
 	case byte(rmCmd):
 		Debug("Applying rm command")
-		err := fsm.store.Remove(l.Data[2:], l.Index)
+		err := fsm.store.Remove(l.Data[2:])
 		if err != nil {
 			Error("Error removing entry: ", err)
 		}
@@ -144,8 +150,17 @@ func (r *Raft) Close() {
 // additional data:
 // - the first byte indicates the schema version of the log entry
 // - the second byte indicates the command type
+// - Add includes 16 bytes after this for the entry UUID
+//
+// Add panics if it cannot create a UUID
 func (r *Raft) Add(cmd []byte, timeout time.Duration) error {
-	h := []byte{logSchemaVersion, byte(addCmd)}
+	uuid, err := newUUID()
+	if err != nil {
+		Panic("Could not generate entry UUID")
+	}
+
+	h := append([]byte{logSchemaVersion, byte(addCmd)}, uuid...)
+	Debug(h)
 	future := r.raft.Apply(append(h, cmd...), timeout)
 	return future.Error()
 }

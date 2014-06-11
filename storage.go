@@ -1,10 +1,7 @@
 package main
 
 import (
-	"crypto/rand"
 	"encoding/binary"
-	"errors"
-	"io"
 	"io/ioutil"
 	"os"
 	"path"
@@ -77,7 +74,7 @@ func (s *Storage) initDB() (err error) {
 	Debug("Created temporary storage directory:", storageDir)
 
 	// 3 sub dbs: Entries, time index, and key index
-	err = s.env.SetMaxDBs(mdb.DBI(4))
+	err = s.env.SetMaxDBs(mdb.DBI(3))
 	if err != nil {
 		return
 	}
@@ -149,15 +146,8 @@ func (s *Storage) startTxn(readonly bool, open ...string) (txn *mdb.Txn, dbis []
 	return
 }
 
-// Add an Entry to the database. index is the raft log entry's index that
-// triggered this add. It is used to ensure we do not apply the same command
-// twice on a restart.
-func (s *Storage) Add(e Entry, index uint64) (uuid []byte, err error) {
-	uuid, err = newUUID()
-	if err != nil {
-		return
-	}
-
+// Add an Entry to the database.
+func (s *Storage) Add(uuid []byte, e Entry) (err error) {
 	txn, dbis, err := s.startTxn(false, timeDB, entryDB, keyDB)
 	if err != nil {
 		return
@@ -352,9 +342,8 @@ func (s *Storage) innerRemove(txn *mdb.Txn, dbis []mdb.DBI, uuid []byte) (err er
 	return
 }
 
-// Remove an emitted entry from the db. uuid is the Entry's UUID. index is the
-// entry's raft log index.
-func (s *Storage) Remove(uuid []byte, index uint64) (err error) {
+// Remove an emitted entry from the db. uuid is the Entry's UUID.
+func (s *Storage) Remove(uuid []byte) (err error) {
 	txn, dbis, err := s.startTxn(false, timeDB, entryDB, keyDB)
 	if err != nil {
 		return
@@ -380,21 +369,4 @@ func uint64ToBytes(u uint64) []byte {
 	buf := make([]byte, 8)
 	binary.BigEndian.PutUint64(buf, u)
 	return buf
-}
-
-func newUUID() (uuid []byte, err error) {
-	uuid = make([]byte, 16)
-	n, err := io.ReadFull(rand.Reader, uuid)
-	if n != len(uuid) {
-		err = errors.New("Could not create uuid")
-	}
-	if err != nil {
-		return
-	}
-
-	// variant bits; see section 4.1.1
-	uuid[8] = uuid[8]&^0xc0 | 0x80
-	// version 4 (pseudo-random); see section 4.1.3
-	uuid[6] = uuid[6]&^0xf0 | 0x40
-	return
 }
