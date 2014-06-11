@@ -123,8 +123,11 @@ func NewAmqpReceiver(ac AmqpConfig) (receiver *AmqpReceiver, err error) {
 				// we have a new source of 'real' messages. swap it in.
 				Debug("Installing new amqp channel")
 				realMessages = m
-			case msg := <-realMessages:
-				messages <- msg
+			case msg, ok := <-realMessages:
+				// Don't propagate any channel close messages
+				if ok {
+					messages <- msg
+				}
 			}
 		}
 	}()
@@ -142,8 +145,9 @@ func NewAmqpReceiver(ac AmqpConfig) (receiver *AmqpReceiver, err error) {
 
 				delay, ok := msg.Headers["delayd-delay"].(int64)
 				if !ok {
+					Warn(msg)
 					Warn("Bad/missing delay. discarding message")
-					eWrapper.Done(false)
+					eWrapper.Done(true)
 					continue
 				}
 				entry.SendAt = time.Now().Add(time.Duration(delay) * time.Millisecond)
@@ -151,7 +155,7 @@ func NewAmqpReceiver(ac AmqpConfig) (receiver *AmqpReceiver, err error) {
 				entry.Target, ok = msg.Headers["delayd-target"].(string)
 				if !ok {
 					Warn("Bad/missing target. discarding message")
-					eWrapper.Done(false)
+					eWrapper.Done(true)
 					continue
 				}
 
