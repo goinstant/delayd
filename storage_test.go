@@ -13,7 +13,7 @@ func innerTestAdd(t *testing.T, e Entry) {
 	assert.Nil(t, err)
 	defer s.Close()
 
-	_, err = s.Add(e, 0)
+	_, err = s.Add(e)
 	assert.Nil(t, err)
 
 	uuids, entries, err := s.Get(e.SendAt)
@@ -58,10 +58,10 @@ func TestAddWithKeyReplacesExisting(t *testing.T) {
 	assert.Nil(t, err)
 	defer s.Close()
 
-	_, err = s.Add(e, 0)
+	_, err = s.Add(e)
 	assert.Nil(t, err)
 
-	_, err = s.Add(e2, 0)
+	_, err = s.Add(e2)
 	assert.Nil(t, err)
 
 	// since e is before e2, this would return both.
@@ -104,10 +104,10 @@ func TestAddSameTime(t *testing.T) {
 	assert.Nil(t, err)
 	defer s.Close()
 
-	_, err = s.Add(e, 0)
+	_, err = s.Add(e)
 	assert.Nil(t, err)
 
-	_, err = s.Add(e2, 0)
+	_, err = s.Add(e2)
 	assert.Nil(t, err)
 
 	// since e is before e2, this would return both.
@@ -127,10 +127,10 @@ func innerTestRemove(t *testing.T, e Entry) {
 	assert.Nil(t, err)
 	defer s.Close()
 
-	uuid, err := s.Add(e, 0)
+	uuid, err := s.Add(e)
 	assert.Nil(t, err)
 
-	err = s.Remove(uuid, 0)
+	err = s.Remove(uuid)
 	assert.Nil(t, err)
 
 	uuids, entries, err := s.Get(e.SendAt)
@@ -162,9 +162,9 @@ func TestRemoveEntryNotFound(t *testing.T) {
 	assert.Nil(t, err)
 	defer s.Close()
 
-	badUuid := []byte{0xDE, 0xAD, 0xBE, 0xEF}
+	badUUID := []byte{0xDE, 0xAD, 0xBE, 0xEF}
 
-	err = s.Remove(badUuid, 0)
+	err = s.Remove(badUUID)
 	assert.Error(t, err)
 }
 
@@ -183,14 +183,14 @@ func TestRemoveSameTimeRemovesCorrectEntry(t *testing.T) {
 	assert.Nil(t, err)
 	defer s.Close()
 
-	_, err = s.Add(e, 0)
+	_, err = s.Add(e)
 	assert.Nil(t, err)
 
-	uuid, err := s.Add(e2, 0)
+	uuid, err := s.Add(e2)
 	assert.Nil(t, err)
 
 	// remove only e2.
-	err = s.Remove(uuid, 0)
+	err = s.Remove(uuid)
 
 	uuids, entries, err := s.Get(e2.SendAt)
 	assert.Nil(t, err)
@@ -212,7 +212,7 @@ func TestNextTime(t *testing.T) {
 		Key:    "user-key",
 	}
 
-	_, err = s.Add(e, 0)
+	_, err = s.Add(e)
 	assert.Nil(t, err)
 
 	ok, ts, err := s.NextTime()

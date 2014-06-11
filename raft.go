@@ -45,13 +45,13 @@ func (fsm *FSM) Apply(l *raft.Log) interface{} {
 			Panic("Error decoding entry: ", err)
 		}
 
-		_, err = fsm.store.Add(entry, l.Index)
+		_, err = fsm.store.Add(entry)
 		if err != nil {
 			Error("Error storing entry: ", err)
 		}
 	case byte(rmCmd):
 		Debug("Applying rm command")
-		err := fsm.store.Remove(l.Data[2:], l.Index)
+		err := fsm.store.Remove(l.Data[2:])
 		if err != nil {
 			Error("Error removing entry: ", err)
 		}

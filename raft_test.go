@@ -102,7 +102,7 @@ func TestRemove(t *testing.T) {
 
 	fsm := FSM{s}
 
-	uuid, err := s.Add(e, 0)
+	uuid, err := s.Add(e)
 	assert.Nil(t, err)
 
 	l := raft.Log{Data: append(v0RmCmd, uuid...), Index: 2}
