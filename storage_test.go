@@ -8,12 +8,17 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+var (
+	dummyUUID, _  = newUUID()
+	dummyUUID2, _ = newUUID()
+)
+
 func innerTestAdd(t *testing.T, e Entry) {
 	s, err := NewStorage()
 	assert.Nil(t, err)
 	defer s.Close()
 
-	_, err = s.Add(e)
+	err = s.Add(dummyUUID, e)
 	assert.Nil(t, err)
 
 	uuids, entries, err := s.Get(e.SendAt)
@@ -58,10 +63,10 @@ func TestAddWithKeyReplacesExisting(t *testing.T) {
 	assert.Nil(t, err)
 	defer s.Close()
 
-	_, err = s.Add(e)
+	err = s.Add(dummyUUID, e)
 	assert.Nil(t, err)
 
-	_, err = s.Add(e2)
+	err = s.Add(dummyUUID2, e2)
 	assert.Nil(t, err)
 
 	// since e is before e2, this would return both.
@@ -104,10 +109,10 @@ func TestAddSameTime(t *testing.T) {
 	assert.Nil(t, err)
 	defer s.Close()
 
-	_, err = s.Add(e)
+	err = s.Add(dummyUUID, e)
 	assert.Nil(t, err)
 
-	_, err = s.Add(e2)
+	err = s.Add(dummyUUID2, e2)
 	assert.Nil(t, err)
 
 	// since e is before e2, this would return both.
@@ -127,10 +132,10 @@ func innerTestRemove(t *testing.T, e Entry) {
 	assert.Nil(t, err)
 	defer s.Close()
 
-	uuid, err := s.Add(e)
+	err = s.Add(dummyUUID, e)
 	assert.Nil(t, err)
 
-	err = s.Remove(uuid)
+	err = s.Remove(dummyUUID)
 	assert.Nil(t, err)
 
 	uuids, entries, err := s.Get(e.SendAt)
@@ -183,14 +188,14 @@ func TestRemoveSameTimeRemovesCorrectEntry(t *testing.T) {
 	assert.Nil(t, err)
 	defer s.Close()
 
-	_, err = s.Add(e)
+	err = s.Add(dummyUUID, e)
 	assert.Nil(t, err)
 
-	uuid, err := s.Add(e2)
+	err = s.Add(dummyUUID2, e2)
 	assert.Nil(t, err)
 
 	// remove only e2.
-	err = s.Remove(uuid)
+	err = s.Remove(dummyUUID2)
 
 	uuids, entries, err := s.Get(e2.SendAt)
 	assert.Nil(t, err)
@@ -212,7 +217,7 @@ func TestNextTime(t *testing.T) {
 		Key:    "user-key",
 	}
 
-	_, err = s.Add(e)
+	err = s.Add(dummyUUID, e)
 	assert.Nil(t, err)
 
 	ok, ts, err := s.NextTime()

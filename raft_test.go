@@ -13,8 +13,10 @@ const (
 	invalidCommand = 0xFE // A byte value that has no command associated
 )
 
-var v0AddCmd = []byte{logSchemaVersion, byte(addCmd)}
-var v0RmCmd = []byte{logSchemaVersion, byte(rmCmd)}
+var (
+	v0AddCmd = []byte{logSchemaVersion, byte(addCmd)}
+	v0RmCmd  = []byte{logSchemaVersion, byte(rmCmd)}
+)
 
 func TestApplyPanicsOnBadSchemaVersion(t *testing.T) {
 	l := raft.Log{Data: []byte{invalidSchema}}
@@ -58,7 +60,7 @@ func TestApplyAddsEntry(t *testing.T) {
 
 	fsm := FSM{s}
 
-	l := raft.Log{Data: append(v0AddCmd, b...), Index: 1}
+	l := raft.Log{Data: append(append(v0AddCmd, dummyUUID...), b...), Index: 1}
 	fsm.Apply(&l)
 
 	_, entries, _ := s.Get(e.SendAt)
@@ -80,10 +82,10 @@ func TestApplyAddsMultipleEntries(t *testing.T) {
 
 	fsm := FSM{s}
 
-	l := raft.Log{Data: append(v0AddCmd, b...), Index: 1}
+	l := raft.Log{Data: append(append(v0AddCmd, dummyUUID...), b...), Index: 1}
 	fsm.Apply(&l)
 
-	l = raft.Log{Data: append(v0AddCmd, b...), Index: 2}
+	l = raft.Log{Data: append(append(v0AddCmd, dummyUUID2...), b...), Index: 2}
 	fsm.Apply(&l)
 
 	_, entries, _ := s.Get(e.SendAt)
@@ -102,10 +104,10 @@ func TestRemove(t *testing.T) {
 
 	fsm := FSM{s}
 
-	uuid, err := s.Add(e)
+	err = s.Add(dummyUUID, e)
 	assert.Nil(t, err)
 
-	l := raft.Log{Data: append(v0RmCmd, uuid...), Index: 2}
+	l := raft.Log{Data: append(v0RmCmd, dummyUUID...), Index: 2}
 	fsm.Apply(&l)
 
 	_, entries, _ := s.Get(e.SendAt)

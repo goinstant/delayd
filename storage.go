@@ -1,10 +1,7 @@
 package main
 
 import (
-	"crypto/rand"
 	"encoding/binary"
-	"errors"
-	"io"
 	"io/ioutil"
 	"os"
 	"path"
@@ -150,12 +147,7 @@ func (s *Storage) startTxn(readonly bool, open ...string) (txn *mdb.Txn, dbis []
 }
 
 // Add an Entry to the database.
-func (s *Storage) Add(e Entry) (uuid []byte, err error) {
-	uuid, err = newUUID()
-	if err != nil {
-		return
-	}
-
+func (s *Storage) Add(uuid []byte, e Entry) (err error) {
 	txn, dbis, err := s.startTxn(false, timeDB, entryDB, keyDB)
 	if err != nil {
 		return
@@ -377,21 +369,4 @@ func uint64ToBytes(u uint64) []byte {
 	buf := make([]byte, 8)
 	binary.BigEndian.PutUint64(buf, u)
 	return buf
-}
-
-func newUUID() (uuid []byte, err error) {
-	uuid = make([]byte, 16)
-	n, err := io.ReadFull(rand.Reader, uuid)
-	if n != len(uuid) {
-		err = errors.New("Could not create uuid")
-	}
-	if err != nil {
-		return
-	}
-
-	// variant bits; see section 4.1.1
-	uuid[8] = uuid[8]&^0xc0 | 0x80
-	// version 4 (pseudo-random); see section 4.1.3
-	uuid[6] = uuid[6]&^0xf0 | 0x40
-	return
 }
