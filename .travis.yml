@@ -7,7 +7,7 @@ services:
 notifications:
   hipchat:
     rooms:
-      secure: XZ5eI1a6GqOLXktFAp6Uz4SrxH35OhwyHh3Pp4AlqixR/Xm9734pUKmFSMK4BoDRGIi5gE3kQw3QhON7BNOMIzXXvHnnFe3yWyPM9b/0SdPnAgpbRZdnaqAulEF7LR9+NEaC+sRFpTTv8D6u0k12lOq9CWerk1RcAnBv6Zu0uDc=
+      secure: "nonfW/JytEY1P++k39EfL9ck9V99jH6vONTGG9m6NjIH+VDrTl+lwBM2r9txRhfJnozYAxvkWQ/QrgIPqv5wJV6ZLHiSP8gxVGV7bPiaUBYh3CqpAzlAFBYMtvqmvXjofxRKxGi7qQPkyd1pxDFTeZM/nkohjkXisYksSBwZfoE="
     template:
     - '<img src="https://db.tt/K0gEyZVh">&nbsp;(%{repository_slug})&nbsp;<a href="%{build_url}">%{branch}</a>
       - <a href="%{compare_url}">%{commit}</a> : %{message}'
