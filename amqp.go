@@ -99,7 +99,7 @@ func NewAmqpReceiver(ac AmqpConfig) (receiver *AmqpReceiver, err error) {
 	}
 
 	for _, exch := range ac.Queue.Bind {
-		Debug("Binding queue %s to exchange %s", queue.Name, exch)
+		Debugf("Binding queue %s to exchange %s", queue.Name, exch)
 		err = receiver.channel.QueueBind(queue.Name, "delayd", exch, ac.Queue.NoWait, nil)
 		if err != nil {
 			// XXX un-fatal this like the other errors
