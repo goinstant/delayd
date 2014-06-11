@@ -89,7 +89,7 @@ func main() {
 			Name:        "server",
 			ShortName:   "serv",
 			Usage:       "Spawn a Delayd Server",
-			Description: "Delay Daemon for distributed `setTimeout()`",
+			Description: "Delay Daemon for replicated `setTimeout()`",
 			Action:      execute,
 			Flags:       flags,
 		},
