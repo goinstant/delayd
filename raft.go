@@ -44,7 +44,7 @@ func (fsm *FSM) Apply(l *raft.Log) interface{} {
 	// this doesn't strictly check for version + 1 as raft has internal commands
 	// that go on the log, too.
 	if l.Index <= version {
-		Debug("Skipping apply for old version (did you restart?) existing=%d new=%d\n", version, l.Index)
+		Debugf("Skipping apply for old version (did you restart?) existing=%d new=%d\n", version, l.Index)
 		return nil
 	}
 

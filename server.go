@@ -135,7 +135,7 @@ func (s *Server) timerSend(t time.Time) (next time.Time, ok bool) {
 		Fatal("Could not read entries from db: ", err)
 	}
 
-	Info("Sending %d entries\n", len(entries))
+	Infof("Sending %d entries\n", len(entries))
 	for i, e := range entries {
 		err = s.sender.Send(e)
 
@@ -150,7 +150,7 @@ func (s *Server) timerSend(t time.Time) (next time.Time, ok bool) {
 			if err.Code != 504 {
 				Fatal("Could not send entry: ", err)
 			} else {
-				Warn("channel/connection not set up for exchange `%s`, message will be deleted", e.Target)
+				Warnf("channel/connection not set up for exchange `%s`, message will be deleted", e.Target)
 			}
 		}
 
@@ -158,7 +158,7 @@ func (s *Server) timerSend(t time.Time) (next time.Time, ok bool) {
 		if err != nil {
 			// This node is no longer the leader. give up on other amqp sends,
 			// and scheduling the next emission
-			Warn("Lost raft leadership during remove. AMQP send will be a duplicate. uuid=%x\n", uuids[i])
+			Warnf("Lost raft leadership during remove. AMQP send will be a duplicate. uuid=%x\n", uuids[i])
 			break
 		}
 	}

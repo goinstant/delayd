@@ -3,6 +3,9 @@ TESTDEPS = $(shell go list -f '{{range .TestImports}}{{.}} {{end}}' ./...)
 TOOLDEPS = code.google.com/p/go.tools/cmd/vet
 TOOLDEPS += github.com/golang/lint/golint
 
+PRINTFUNCS = Debug:0,Debugf:1,Info:0,Infof:1,Warn:0,Warnf:1,Error:0,Errorf:1,\
+	Fatal:0,Fatalf:1,Panic:0,Panicf:1
+
 # GOPATH isn't in bin on travis
 LINT=$(shell echo $$GOPATH | cut -d ":" -f1)/bin/golint
 
@@ -29,10 +32,12 @@ test:
 testint:
 	go test ./...
 
-check: lint
+check: lint vet
 	gofmt -l .
 	[ -z "$$(gofmt -l .)" ]
-	go vet
+
+vet:
+	go tool vet -printfuncs="$(PRINTFUNCS)" .
 
 # golint has no options or ways to ignore values, so if we start getting false
 # positives, just take it out of the build flow.
