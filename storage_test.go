@@ -1,8 +1,6 @@
 package main
 
 import (
-	"io/ioutil"
-	"os"
 	"reflect"
 	"testing"
 	"time"
@@ -11,11 +9,7 @@ import (
 )
 
 func innerTestAdd(t *testing.T, e Entry) {
-	dir, err := ioutil.TempDir("", "delayd-test")
-	assert.Nil(t, err)
-	defer os.Remove(dir)
-
-	s, err := NewStorage(dir)
+	s, err := NewStorage()
 	assert.Nil(t, err)
 	defer s.Close()
 
@@ -60,11 +54,7 @@ func TestAddWithKeyReplacesExisting(t *testing.T) {
 		Key:    "user-key",
 	}
 
-	dir, err := ioutil.TempDir("", "delayd-test")
-	assert.Nil(t, err)
-	defer os.Remove(dir)
-
-	s, err := NewStorage(dir)
+	s, err := NewStorage()
 	assert.Nil(t, err)
 	defer s.Close()
 
@@ -110,11 +100,7 @@ func TestAddSameTime(t *testing.T) {
 		SendAt: e.SendAt,
 	}
 
-	dir, err := ioutil.TempDir("", "delayd-test")
-	assert.Nil(t, err)
-	defer os.Remove(dir)
-
-	s, err := NewStorage(dir)
+	s, err := NewStorage()
 	assert.Nil(t, err)
 	defer s.Close()
 
@@ -136,35 +122,8 @@ func TestAddSameTime(t *testing.T) {
 	assertContains(t, entries, e2)
 }
 
-func TestAddUpdatesVersion(t *testing.T) {
-	e := Entry{
-		Target: "something",
-		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
-		Key:    "user-key",
-	}
-
-	dir, err := ioutil.TempDir("", "delayd-test")
-	assert.Nil(t, err)
-	defer os.Remove(dir)
-
-	s, err := NewStorage(dir)
-	assert.Nil(t, err)
-	defer s.Close()
-
-	_, err = s.Add(e, 11)
-	assert.Nil(t, err)
-
-	version, err := s.Version()
-	assert.Nil(t, err)
-	assert.Equal(t, version, 11)
-}
-
 func innerTestRemove(t *testing.T, e Entry) {
-	dir, err := ioutil.TempDir("", "delayd-test")
-	assert.Nil(t, err)
-	defer os.Remove(dir)
-
-	s, err := NewStorage(dir)
+	s, err := NewStorage()
 	assert.Nil(t, err)
 	defer s.Close()
 
@@ -199,11 +158,7 @@ func TestRemoveWithKey(t *testing.T) {
 }
 
 func TestRemoveEntryNotFound(t *testing.T) {
-	dir, err := ioutil.TempDir("", "delayd-test")
-	assert.Nil(t, err)
-	defer os.Remove(dir)
-
-	s, err := NewStorage(dir)
+	s, err := NewStorage()
 	assert.Nil(t, err)
 	defer s.Close()
 
@@ -224,11 +179,7 @@ func TestRemoveSameTimeRemovesCorrectEntry(t *testing.T) {
 		SendAt: e.SendAt,
 	}
 
-	dir, err := ioutil.TempDir("", "delayd-test")
-	assert.Nil(t, err)
-	defer os.Remove(dir)
-
-	s, err := NewStorage(dir)
+	s, err := NewStorage()
 	assert.Nil(t, err)
 	defer s.Close()
 
@@ -251,11 +202,7 @@ func TestRemoveSameTimeRemovesCorrectEntry(t *testing.T) {
 }
 
 func TestNextTime(t *testing.T) {
-	dir, err := ioutil.TempDir("", "delayd-test")
-	assert.Nil(t, err)
-	defer os.Remove(dir)
-
-	s, err := NewStorage(dir)
+	s, err := NewStorage()
 	assert.Nil(t, err)
 	defer s.Close()
 
@@ -275,29 +222,11 @@ func TestNextTime(t *testing.T) {
 }
 
 func TestNextTimeNoEntries(t *testing.T) {
-	dir, err := ioutil.TempDir("", "delayd-test")
-	assert.Nil(t, err)
-	defer os.Remove(dir)
-
-	s, err := NewStorage(dir)
+	s, err := NewStorage()
 	assert.Nil(t, err)
 	defer s.Close()
 
 	ok, _, err := s.NextTime()
 	assert.Nil(t, err)
 	assert.False(t, ok)
-}
-
-func TestVersionReturnsZeroIfNoEntries(t *testing.T) {
-	dir, err := ioutil.TempDir("", "delayd-test")
-	assert.Nil(t, err)
-	defer os.Remove(dir)
-
-	s, err := NewStorage(dir)
-	assert.Nil(t, err)
-	defer s.Close()
-
-	version, err := s.Version()
-	assert.Nil(t, err)
-	assert.Equal(t, version, 0)
 }

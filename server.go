@@ -40,7 +40,7 @@ func (s *Server) Run(c Config) {
 		Fatal("Could not initialize sender: ", err)
 	}
 
-	s.storage, err = NewStorage(c.DataDir)
+	s.storage, err = NewStorage()
 	if err != nil {
 		Fatal("Could not initialize storage backend: ", err)
 	}

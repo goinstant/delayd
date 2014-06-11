@@ -36,18 +36,6 @@ func (fsm *FSM) Apply(l *raft.Log) interface{} {
 		Panicf("Unknown log schema version seen. version=%d", logVer)
 	}
 
-	version, err := fsm.store.Version()
-	if err != nil {
-		Panic("Error reading version: ", err)
-	}
-
-	// this doesn't strictly check for version + 1 as raft has internal commands
-	// that go on the log, too.
-	if l.Index <= version {
-		Debugf("Skipping apply for old version (did you restart?) existing=%d new=%d\n", version, l.Index)
-		return nil
-	}
-
 	cmdType := l.Data[1]
 	switch cmdType {
 	case byte(addCmd):
@@ -63,7 +51,7 @@ func (fsm *FSM) Apply(l *raft.Log) interface{} {
 		}
 	case byte(rmCmd):
 		Debug("Applying rm command")
-		err = fsm.store.Remove(l.Data[2:], l.Index)
+		err := fsm.store.Remove(l.Data[2:], l.Index)
 		if err != nil {
 			Error("Error removing entry: ", err)
 		}

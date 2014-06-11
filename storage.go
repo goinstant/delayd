@@ -5,37 +5,40 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"io/ioutil"
 	"os"
 	"path"
+	"runtime"
 	"time"
 
 	"github.com/armon/gomdb"
 )
 
 const (
-	metaDB  = "meta"    // Meta info (schema version, last applied index)
 	timeDB  = "time"    // map of emit time to entry uuid
 	keyDB   = "keys"    // map of user provided key to entry uuid. optional
 	entryDB = "entries" // map of uuid to entry
 
-	schemaVer = 1 // On-disk storage format version
+	dbMaxMapSize32bit uint64 = 512 * 1024 * 1024       // 512MB maximum size
+	dbMaxMapSize64bit uint64 = 32 * 1024 * 1024 * 1024 // 32GB maximum size
 )
 
-var allDBs = []string{metaDB, timeDB, keyDB, entryDB}
+var allDBs = []string{timeDB, keyDB, entryDB}
 
 // Storage is the database backend for persisting Entries via LMDB, and triggering
 // entry emission.
 type Storage struct {
 	env *mdb.Env
 	dbi *mdb.DBI
+	dir string
 }
 
 // NewStorage creates a new Storage instance. prefix is the base directory where
 // data is written on-disk.
-func NewStorage(prefix string) (s *Storage, err error) {
+func NewStorage() (s *Storage, err error) {
 	s = new(Storage)
 
-	err = s.initDB(prefix)
+	err = s.initDB()
 	if err != nil {
 		return
 	}
@@ -43,17 +46,35 @@ func NewStorage(prefix string) (s *Storage, err error) {
 	return
 }
 
-func (s *Storage) initDB(prefix string) (err error) {
+func (s *Storage) initDB() (err error) {
 	s.env, err = mdb.NewEnv()
 	if err != nil {
 		return
 	}
 
-	storageDir := path.Join(prefix, "db")
+	// Set the maximum db size based on 32/64bit
+	dbSize := dbMaxMapSize32bit
+	if runtime.GOARCH == "amd64" {
+		dbSize = dbMaxMapSize64bit
+	}
+
+	// Increase the maximum map size
+	err = s.env.SetMapSize(dbSize)
+	if err != nil {
+		return
+	}
+
+	s.dir, err = ioutil.TempDir("", "delayd")
+	if err != nil {
+		return
+	}
+
+	storageDir := path.Join(s.dir, "db")
 	err = os.MkdirAll(storageDir, 0755)
 	if err != nil {
 		return
 	}
+	Debug("Created temporary storage directory:", storageDir)
 
 	// 3 sub dbs: Entries, time index, and key index
 	err = s.env.SetMaxDBs(mdb.DBI(4))
@@ -61,20 +82,17 @@ func (s *Storage) initDB(prefix string) (err error) {
 		return
 	}
 
-	err = s.env.Open(storageDir, 0, 0755)
+	// Optimize our flags for speed over safety. Raft handles durable storage.
+	var flags uint
+	flags = mdb.NOMETASYNC | mdb.NOSYNC | mdb.NOTLS
+
+	err = s.env.Open(storageDir, flags, 0755)
 	if err != nil {
 		return
 	}
 
 	// Initialize sub dbs
-	txn, dbis, err := s.startTxn(false, allDBs...)
-	if err != nil {
-		txn.Abort()
-		return
-	}
-
-	// XXX check schema version first (once we change it). See #26
-	err = txn.Put(dbis[0], []byte("schema"), uint64ToBytes(schemaVer), 0)
+	txn, _, err := s.startTxn(false, allDBs...)
 	if err != nil {
 		txn.Abort()
 		return
@@ -94,6 +112,7 @@ func (s *Storage) Close() {
 	// mdb will segfault if any transactions are in process when this is called,
 	// so ensure users of storage are stopped first.
 	s.env.Close()
+	os.RemoveAll(s.dir)
 }
 
 // startTxn is used to start a transaction and open all the associated sub-databases
@@ -139,7 +158,7 @@ func (s *Storage) Add(e Entry, index uint64) (uuid []byte, err error) {
 		return
 	}
 
-	txn, dbis, err := s.startTxn(false, timeDB, entryDB, keyDB, metaDB)
+	txn, dbis, err := s.startTxn(false, timeDB, entryDB, keyDB)
 	if err != nil {
 		return
 	}
@@ -185,12 +204,6 @@ func (s *Storage) Add(e Entry, index uint64) (uuid []byte, err error) {
 	}
 
 	err = txn.Put(dbis[1], uuid, b, 0)
-	if err != nil {
-		txn.Abort()
-		return
-	}
-
-	err = txn.Put(dbis[3], []byte("version"), uint64ToBytes(index), 0)
 	if err != nil {
 		txn.Abort()
 		return
@@ -342,7 +355,7 @@ func (s *Storage) innerRemove(txn *mdb.Txn, dbis []mdb.DBI, uuid []byte) (err er
 // Remove an emitted entry from the db. uuid is the Entry's UUID. index is the
 // entry's raft log index.
 func (s *Storage) Remove(uuid []byte, index uint64) (err error) {
-	txn, dbis, err := s.startTxn(false, timeDB, entryDB, keyDB, metaDB)
+	txn, dbis, err := s.startTxn(false, timeDB, entryDB, keyDB)
 	if err != nil {
 		return
 	}
@@ -353,43 +366,7 @@ func (s *Storage) Remove(uuid []byte, index uint64) (err error) {
 		return
 	}
 
-	err = txn.Put(dbis[3], []byte("version"), uint64ToBytes(index), 0)
-	if err != nil {
-		txn.Abort()
-		return
-	}
-
 	txn.Commit()
-	return
-}
-
-// Version returns the current raft index version as stored in the db.
-// Use this to determine if actions should be performed or not.
-func (s *Storage) Version() (version uint64, err error) {
-	txn, dbis, err := s.startTxn(true, metaDB)
-	if err != nil {
-		Error("Error creating transaction: ", err)
-		return
-	}
-	defer txn.Abort()
-
-	cursor, err := txn.CursorOpen(dbis[0])
-	if err != nil {
-		Error("Error getting cursor for version: ", err)
-		return
-	}
-	defer cursor.Close()
-
-	_, b, err := cursor.Get([]byte("version"), mdb.SET_KEY)
-	if err == mdb.NotFound {
-		err = nil
-		return
-	} else if err != nil {
-		Error("Error reading cursor for version: ", err)
-		return
-	}
-
-	version = bytesToUint64(b)
 	return
 }
 
