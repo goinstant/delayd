@@ -23,7 +23,6 @@ make       # build the executable
 ```
 
 ## License
-&copy; 2014 GoInstant Inc., a salesforce.com company. Licensed under the BSD
-3-clause license.
+&copy; 2014 salesforce.com. Licensed under the BSD 3-clause license.
 
 [![GoInstant](http://goinstant.com/static/img/logo.png)](http://goinstant.com)
