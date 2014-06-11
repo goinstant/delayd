@@ -34,10 +34,19 @@ type AmqpConfig struct {
 	Queue    AmqpQueue    `toml:"queue"`
 }
 
+// RaftConfig holds configuration for Raft concensus
+type RaftConfig struct {
+	Single    bool `toml:"single_node"`
+	Peers     []string
+	Listen    string
+	Advertise *string
+}
+
 // Config holds delayd configuration
 type Config struct {
 	Amqp    AmqpConfig `toml:"amqp"`
 	DataDir string     `toml:"data_dir"`
+	Raft    RaftConfig
 }
 
 // loadConfig load's delayd's toml configuration, based on the command-line

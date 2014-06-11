@@ -1,7 +1,7 @@
 DEPS = $(shell go list -f '{{range .Imports}}{{.}} {{end}}' ./...)
 TESTDEPS = $(shell go list -f '{{range .TestImports}}{{.}} {{end}}' ./...)
-TOOLDEPS = code.google.com/p/go.tools/cmd/vet
-TOOLDEPS += github.com/golang/lint/golint
+TOOLDEPS = github.com/golang/lint/golint
+# TOOLDEPS += code.google.com/p/go.tools/cmd/vet
 
 PRINTFUNCS = Debug:0,Debugf:1,Info:0,Infof:1,Warn:0,Warnf:1,Error:0,Errorf:1,\
 	Fatal:0,Fatalf:1,Panic:0,Panicf:1
@@ -32,10 +32,11 @@ test:
 testint:
 	go test ./...
 
-check: lint vet
+check: lint
 	gofmt -l .
 	[ -z "$$(gofmt -l .)" ]
 
+# XXX vet fails to build at the moment. revisit later.
 vet:
 	go tool vet -printfuncs="$(PRINTFUNCS)" .
 
