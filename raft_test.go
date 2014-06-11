@@ -1,8 +1,6 @@
 package main
 
 import (
-	"io/ioutil"
-	"os"
 	"testing"
 	"time"
 
@@ -45,70 +43,8 @@ func TestApplyPanicsOnBadEntry(t *testing.T) {
 	})
 }
 
-func TestApplyDoesNotReapplyOldVersion(t *testing.T) {
-	dir, err := ioutil.TempDir("", "delayd-test")
-	assert.Nil(t, err)
-	defer os.Remove(dir)
-
-	s, err := NewStorage(dir)
-	assert.Nil(t, err)
-	defer s.Close()
-
-	e := Entry{
-		Target: "something",
-		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
-	}
-
-	b, err := e.ToBytes()
-	assert.Nil(t, err)
-
-	fsm := FSM{s}
-
-	l := raft.Log{Data: append(v0AddCmd, b...), Index: 2}
-	fsm.Apply(&l)
-
-	l = raft.Log{Data: append(v0AddCmd, b...), Index: 1}
-	fsm.Apply(&l)
-
-	_, entries, _ := s.Get(e.SendAt)
-	assert.Equal(t, len(entries), 1)
-}
-
-func TestApplyDoesNotReapplySameVersion(t *testing.T) {
-	dir, err := ioutil.TempDir("", "delayd-test")
-	assert.Nil(t, err)
-	defer os.Remove(dir)
-
-	s, err := NewStorage(dir)
-	assert.Nil(t, err)
-	defer s.Close()
-
-	e := Entry{
-		Target: "something",
-		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
-	}
-
-	b, err := e.ToBytes()
-	assert.Nil(t, err)
-
-	fsm := FSM{s}
-
-	l := raft.Log{Data: append(v0AddCmd, b...), Index: 1}
-	fsm.Apply(&l)
-
-	l = raft.Log{Data: append(v0AddCmd, b...), Index: 1}
-	fsm.Apply(&l)
-
-	_, entries, _ := s.Get(e.SendAt)
-	assert.Equal(t, len(entries), 1)
-}
-
 func TestApplyAddsEntry(t *testing.T) {
-	dir, err := ioutil.TempDir("", "delayd-test")
-	assert.Nil(t, err)
-	defer os.Remove(dir)
-
-	s, err := NewStorage(dir)
+	s, err := NewStorage()
 	assert.Nil(t, err)
 	defer s.Close()
 
@@ -130,11 +66,7 @@ func TestApplyAddsEntry(t *testing.T) {
 }
 
 func TestApplyAddsMultipleEntries(t *testing.T) {
-	dir, err := ioutil.TempDir("", "delayd-test")
-	assert.Nil(t, err)
-	defer os.Remove(dir)
-
-	s, err := NewStorage(dir)
+	s, err := NewStorage()
 	assert.Nil(t, err)
 	defer s.Close()
 
@@ -159,11 +91,7 @@ func TestApplyAddsMultipleEntries(t *testing.T) {
 }
 
 func TestRemove(t *testing.T) {
-	dir, err := ioutil.TempDir("", "delayd-test")
-	assert.Nil(t, err)
-	defer os.Remove(dir)
-
-	s, err := NewStorage(dir)
+	s, err := NewStorage()
 	assert.Nil(t, err)
 	defer s.Close()
 
