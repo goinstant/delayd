@@ -45,7 +45,7 @@ func (s *Server) Run(c Config) {
 		Fatal("Could not initialize storage backend: ", err)
 	}
 
-	s.raft, err = NewRaft(c.DataDir, s.storage)
+	s.raft, err = NewRaft(c.Raft, c.DataDir, s.storage)
 	if err != nil {
 		Fatal("Could not initialize raft: ", err)
 	}

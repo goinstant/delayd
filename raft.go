@@ -86,7 +86,7 @@ type Raft struct {
 }
 
 // NewRaft creates a new Raft instance. raft data is stored under the raft dir in prefix.
-func NewRaft(prefix string, storage *Storage) (r *Raft, err error) {
+func NewRaft(c RaftConfig, prefix string, storage *Storage) (r *Raft, err error) {
 	r = new(Raft)
 	raftDir := path.Join(prefix, "raft")
 
@@ -101,19 +101,49 @@ func NewRaft(prefix string, storage *Storage) (r *Raft, err error) {
 		return
 	}
 
-	advertise, err := net.ResolveTCPAddr("tcp", ":9998")
+	// this should be our externally visible address. If not provided in the
+	// config as 'advertise', we use the address of the listen config.
+	if c.Advertise == nil {
+		c.Advertise = &c.Listen
+	}
+
+	a, err := net.ResolveTCPAddr("tcp", *c.Advertise)
 	if err != nil {
 		Error("Could not lookup raft advertise address: ", err)
 		return
 	}
 
-	r.transport, err = raft.NewTCPTransport("0.0.0.0:9999", advertise, 3, 10*time.Second, nil)
+	r.transport, err = raft.NewTCPTransport(c.Listen, a, 3, 10*time.Second, nil)
 	if err != nil {
 		Error("Could not create raft transport: ", err)
 		return
 	}
 
-	peers := raft.NewJSONPeers(raftDir, r.transport)
+	peerStore := raft.NewJSONPeers(raftDir, r.transport)
+
+	config := raft.DefaultConfig()
+	config.EnableSingleNode = c.Single
+
+	if !c.Single {
+		var peers []net.Addr
+		peers, err = peerStore.Peers()
+		if err != nil {
+			return
+		}
+
+		for _, peerStr := range c.Peers {
+			peer, err := net.ResolveTCPAddr("tcp", peerStr)
+			if err != nil {
+				Fatal("Bad peer:", err)
+			}
+
+			if !raft.PeerContained(peers, peer) {
+				peerStore.SetPeers(raft.AddUniquePeer(peers, peer))
+			}
+		}
+	} else {
+		Warn("Running in single node permitted mode. Only use this for testing!")
+	}
 
 	r.mdb, err = raftmdb.NewMDBStore(raftDir)
 	if err != nil {
@@ -123,10 +153,7 @@ func NewRaft(prefix string, storage *Storage) (r *Raft, err error) {
 
 	fsm := FSM{storage}
 
-	config := raft.DefaultConfig()
-	config.EnableSingleNode = true
-
-	r.raft, err = raft.NewRaft(config, &fsm, r.mdb, r.mdb, fss, peers, r.transport)
+	r.raft, err = raft.NewRaft(config, &fsm, r.mdb, r.mdb, fss, peerStore, r.transport)
 	if err != nil {
 		Error("Could not initialize raft: ", err)
 		return
