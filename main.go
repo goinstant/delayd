@@ -8,6 +8,9 @@ import (
 	"github.com/codegangsta/cli"
 )
 
+// this is filled in at build time
+var version string
+
 type stopable interface {
 	Stop()
 }
@@ -68,6 +71,7 @@ func main() {
 	app := cli.NewApp()
 	app.Name = "delayd"
 	app.Usage = "available setTimeout()"
+	app.Version = version
 
 	flags := []cli.Flag{
 		cli.StringFlag{"config, c", "/etc/delayd.toml", "config file"},
