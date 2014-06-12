@@ -7,9 +7,8 @@ import (
 
 const twentyFourHours = time.Duration(24) * time.Hour
 
-// SendFunc is called by the timer every time the timer lapses. It must return
-// the next send time, and a bool indicating if there is a next send time or not.
-type SendFunc func(time.Time) (time.Time, bool)
+// SendFunc is called by the timer every time the timer lapses.
+type SendFunc func(time.Time)
 
 // Timer handles triggering event emission, and coordination between Storage
 // and the Sender
@@ -61,7 +60,6 @@ func (t *Timer) Reset(nextSend time.Time, force bool) {
 		return
 	}
 
-	Debug("Setting next timer for: ", nextSend)
 	t.timerRunning = true
 	t.timer.Reset(nextSend.Sub(time.Now()))
 	t.nextSend = nextSend
@@ -81,13 +79,8 @@ func (t *Timer) timerLoop() {
 		case _ = <-t.shutdown:
 			return
 		case sendTime := <-t.timer.C:
-			nextSend, ok := t.sendFunc(sendTime)
-
-			if ok {
-				t.Reset(nextSend, true)
-			} else {
-				t.Pause()
-			}
+			t.Pause()
+			t.sendFunc(sendTime)
 		}
 	}
 }
