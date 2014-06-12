@@ -9,8 +9,10 @@ PRINTFUNCS = Debug:0,Debugf:1,Info:0,Infof:1,Warn:0,Warnf:1,Error:0,Errorf:1,\
 # GOPATH isn't in bin on travis
 LINT=$(shell echo $$GOPATH | cut -d ":" -f1)/bin/golint
 
+VERSION = $(shell git describe --tags | sed 's/^v//')
+
 default:
-	go build
+	go build -ldflags "-X main.version $(VERSION)"
 
 clean:
 	rm -f delayd
