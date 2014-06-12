@@ -8,22 +8,22 @@ import (
 )
 
 func TestTimerCallsSendFunc(t *testing.T) {
-	ch := make(chan bool)
+	ch := make(chan bool, 1)
 	testFunc := func(callTime time.Time) (time.Time, bool) {
-		ch <- true
+		close(ch)
 		return time.Now(), false
 	}
 
 	timer := NewTimer(testFunc)
 	defer timer.Stop()
 
-	timeout := time.After(time.Duration(3) * time.Millisecond)
-	timer.Reset(time.Now().Add(time.Duration(1)*time.Millisecond), true)
+	timeout := time.After(time.Duration(500) * time.Millisecond)
+	timer.Reset(time.Now().Add(time.Duration(2)*time.Millisecond), true)
 
 	select {
-	case _ = <-ch:
-		return
-	case _ = <-timeout:
+	case <-ch:
+		break
+	case <-timeout:
 		assert.Fail(t, "test timed out")
 	}
 }
