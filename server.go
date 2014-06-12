@@ -12,16 +12,19 @@ const raftMaxTime = time.Duration(60) * time.Second
 
 // Server is the delayd server. It handles the server lifecycle (startup, clean shutdown)
 type Server struct {
-	sender   *AmqpSender
-	receiver *AmqpReceiver
-	storage  *Storage
-	raft     *Raft
-	timer    *Timer
+	sender     *AmqpSender
+	receiver   *AmqpReceiver
+	storage    *Storage
+	raft       *Raft
+	timer      *Timer
+	shutdownCh chan bool
 }
 
 // Run initializes the Server from a Config, and begins its main loop.
 func (s *Server) Run(c Config) {
 	Info("Starting delayd")
+
+	s.shutdownCh = make(chan bool)
 
 	Debug("Creating data dir: ", c.DataDir)
 	err := os.MkdirAll(c.DataDir, 0755)
@@ -52,6 +55,7 @@ func (s *Server) Run(c Config) {
 
 	s.timer = NewTimer(s.timerSend)
 	go s.observeLeaderChanges()
+	go s.observeNextTime()
 
 	for {
 		eWrapper, ok := <-s.receiver.C
@@ -72,7 +76,6 @@ func (s *Server) Run(c Config) {
 		if err != nil {
 			eWrapper.Done(false)
 		}
-		s.timer.Reset(entry.SendAt, false)
 
 		eWrapper.Done(true)
 	}
@@ -85,6 +88,8 @@ func (s *Server) Stop() {
 	// stop triggering new changes to the FSM
 	s.receiver.Close()
 	s.timer.Stop()
+
+	close(s.shutdownCh)
 
 	// with no FSM stimulus, we don't need to send.
 	s.sender.Close()
@@ -129,7 +134,20 @@ func (s *Server) observeLeaderChanges() {
 	}
 }
 
-func (s *Server) timerSend(t time.Time) (next time.Time, ok bool) {
+// Listen to storage for next time changes on entry commits
+func (s *Server) observeNextTime() {
+	for {
+		select {
+		case <-s.shutdownCh:
+			return
+		case t := <-s.storage.C:
+			Debug("got time", t)
+			s.timer.Reset(t, false)
+		}
+	}
+}
+
+func (s *Server) timerSend(t time.Time) {
 	uuids, entries, err := s.storage.Get(t)
 	if err != nil {
 		Fatal("Could not read entries from db: ", err)
@@ -165,7 +183,6 @@ func (s *Server) timerSend(t time.Time) (next time.Time, ok bool) {
 
 	if err != nil {
 		// don't reschedule
-		ok = false
 		return
 	}
 
@@ -173,13 +190,7 @@ func (s *Server) timerSend(t time.Time) (next time.Time, ok bool) {
 	err = s.raft.SyncAll()
 	if err != nil {
 		Warn("Lost raft leadership during sync after send.")
-		ok = false
 		return
-	}
-
-	ok, next, err = s.storage.NextTime()
-	if err != nil {
-		Fatal("Could not read next time from db: ", err)
 	}
 
 	return

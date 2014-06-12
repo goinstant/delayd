@@ -9,9 +9,8 @@ import (
 
 func TestTimerCallsSendFunc(t *testing.T) {
 	ch := make(chan bool, 1)
-	testFunc := func(callTime time.Time) (time.Time, bool) {
+	testFunc := func(callTime time.Time) {
 		close(ch)
-		return time.Now(), false
 	}
 
 	timer := NewTimer(testFunc)

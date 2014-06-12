@@ -28,6 +28,9 @@ type Storage struct {
 	env *mdb.Env
 	dbi *mdb.DBI
 	dir string
+
+	C <-chan time.Time
+	c chan<- time.Time
 }
 
 // NewStorage creates a new Storage instance. prefix is the base directory where
@@ -39,6 +42,10 @@ func NewStorage() (s *Storage, err error) {
 	if err != nil {
 		return
 	}
+
+	c := make(chan time.Time)
+	s.C = c
+	s.c = c
 
 	return
 }
@@ -199,7 +206,23 @@ func (s *Storage) Add(uuid []byte, e Entry) (err error) {
 		return
 	}
 
+	ok, t, err := s.innerNextTime(txn, dbis[0])
+	if err != nil {
+		txn.Abort()
+		return
+	}
+
 	err = txn.Commit()
+
+	if err == nil && ok {
+		select {
+		case s.c <- t:
+			break
+		default:
+			break
+		}
+	}
+
 	return
 }
 
@@ -257,17 +280,9 @@ func (s *Storage) Get(t time.Time) (uuids [][]byte, entries []Entry, err error) 
 	return
 }
 
-// NextTime gets the next entry send time from the db
-func (s *Storage) NextTime() (ok bool, t time.Time, err error) {
+func (s *Storage) innerNextTime(txn *mdb.Txn, dbi mdb.DBI) (ok bool, t time.Time, err error) {
 	ok = true
-	txn, dbis, err := s.startTxn(true, timeDB)
-	if err != nil {
-		Error("Error creating transaction: ", err)
-		return
-	}
-	defer txn.Abort()
-
-	cursor, err := txn.CursorOpen(dbis[0])
+	cursor, err := txn.CursorOpen(dbi)
 	if err != nil {
 		Error("Error getting cursor for next time: ", err)
 		return
@@ -286,7 +301,19 @@ func (s *Storage) NextTime() (ok bool, t time.Time, err error) {
 	}
 
 	t = time.Unix(0, int64(bytesToUint64(k)))
+	return
+}
 
+// NextTime gets the next entry send time from the db
+func (s *Storage) NextTime() (ok bool, t time.Time, err error) {
+	txn, dbis, err := s.startTxn(true, timeDB)
+	if err != nil {
+		Error("Error creating transaction: ", err)
+		return
+	}
+	defer txn.Abort()
+
+	ok, t, err = s.innerNextTime(txn, dbis[0])
 	return
 }
 
@@ -355,7 +382,24 @@ func (s *Storage) Remove(uuid []byte) (err error) {
 		return
 	}
 
-	txn.Commit()
+	ok, t, err := s.innerNextTime(txn, dbis[0])
+	if err != nil {
+		txn.Abort()
+		return
+	}
+
+	err = txn.Commit()
+
+	if err == nil && ok {
+		select {
+		case s.c <- t:
+			Debug("Setting next time")
+			break
+		default:
+			break
+		}
+	}
+
 	return
 }
 
