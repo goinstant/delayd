@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/binary"
 	"io/ioutil"
 	"os"
 	"path"
@@ -226,8 +225,7 @@ func (s *Storage) Add(uuid []byte, e Entry) (err error) {
 	return
 }
 
-// Get returns all entries that occur at or before the provided time
-func (s *Storage) Get(t time.Time) (uuids [][]byte, entries []Entry, err error) {
+func (s *Storage) innerGet(t time.Time, all bool) (uuids [][]byte, entries []Entry, err error) {
 	txn, dbis, err := s.startTxn(true, timeDB, entryDB)
 	if err != nil {
 		Error("Error creating transaction: ", err)
@@ -256,10 +254,12 @@ func (s *Storage) Get(t time.Time) (uuids [][]byte, entries []Entry, err error) 
 			return
 		}
 
-		kt := bytesToUint64(k)
-		if kt > sk {
-			err = nil
-			break
+		if !all {
+			kt := bytesToUint64(k)
+			if kt > sk {
+				err = nil
+				break
+			}
 		}
 
 		v, err = txn.Get(dbis[1], uuid)
@@ -278,6 +278,16 @@ func (s *Storage) Get(t time.Time) (uuids [][]byte, entries []Entry, err error) 
 	}
 
 	return
+}
+
+// Get returns all entries that occur at or before the provided time
+func (s *Storage) Get(t time.Time) (uuids [][]byte, entries []Entry, err error) {
+	return s.innerGet(t, false)
+}
+
+// GetAll returns every entry in storage
+func (s *Storage) GetAll() (uuids [][]byte, entries []Entry, err error) {
+	return s.innerGet(time.Now(), true)
 }
 
 func (s *Storage) innerNextTime(txn *mdb.Txn, dbi mdb.DBI) (ok bool, t time.Time, err error) {
@@ -401,16 +411,4 @@ func (s *Storage) Remove(uuid []byte) (err error) {
 	}
 
 	return
-}
-
-// Converts bytes to an integer
-func bytesToUint64(b []byte) uint64 {
-	return binary.BigEndian.Uint64(b)
-}
-
-// Converts a uint to a byte slice
-func uint64ToBytes(u uint64) []byte {
-	buf := make([]byte, 8)
-	binary.BigEndian.PutUint64(buf, u)
-	return buf
 }
