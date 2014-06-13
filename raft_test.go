@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"testing"
 	"time"
 
@@ -112,4 +113,57 @@ func TestRemove(t *testing.T) {
 
 	_, entries, _ := s.Get(e.SendAt)
 	assert.Equal(t, len(entries), 0)
+}
+
+type InmemSnapshotSink struct {
+	bytes.Buffer
+}
+
+func (InmemSnapshotSink) Close() error {
+	return nil
+}
+
+func (InmemSnapshotSink) ID() string {
+	return "dummy"
+}
+
+func (InmemSnapshotSink) Cancel() error {
+	return nil
+}
+
+func TestFSMSnapshotReapplies(t *testing.T) {
+	s, err := NewStorage()
+	assert.Nil(t, err)
+	defer s.Close()
+
+	e := Entry{
+		Target: "something",
+		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
+	}
+
+	fsm := FSM{s}
+
+	err = s.Add(dummyUUID, e)
+	assert.Nil(t, err)
+
+	err = s.Add(dummyUUID2, e)
+	assert.Nil(t, err)
+
+	snap, err := fsm.Snapshot()
+	assert.Nil(t, err)
+
+	sink := InmemSnapshotSink{}
+
+	snap.Persist(&sink)
+
+	s2, err := NewStorage()
+	assert.Nil(t, err)
+	defer s2.Close()
+
+	fsm2 := FSM{s2}
+
+	fsm2.Restore(&sink)
+
+	_, entries, _ := fsm.store.GetAll()
+	assert.Equal(t, len(entries), 2)
 }
