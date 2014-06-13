@@ -7,8 +7,17 @@ services:
 notifications:
   hipchat:
     rooms:
-      secure: "nonfW/JytEY1P++k39EfL9ck9V99jH6vONTGG9m6NjIH+VDrTl+lwBM2r9txRhfJnozYAxvkWQ/QrgIPqv5wJV6ZLHiSP8gxVGV7bPiaUBYh3CqpAzlAFBYMtvqmvXjofxRKxGi7qQPkyd1pxDFTeZM/nkohjkXisYksSBwZfoE="
+      secure: nonfW/JytEY1P++k39EfL9ck9V99jH6vONTGG9m6NjIH+VDrTl+lwBM2r9txRhfJnozYAxvkWQ/QrgIPqv5wJV6ZLHiSP8gxVGV7bPiaUBYh3CqpAzlAFBYMtvqmvXjofxRKxGi7qQPkyd1pxDFTeZM/nkohjkXisYksSBwZfoE=
     template:
-    - '<img src="https://db.tt/K0gEyZVh">&nbsp;(%{repository_slug})&nbsp;<a href="%{build_url}">%{branch}</a>
+    - ! '<img src="https://db.tt/K0gEyZVh">&nbsp;(%{repository_slug})&nbsp;<a href="%{build_url}">%{branch}</a>
       - <a href="%{compare_url}">%{commit}</a> : %{message}'
     format: html
+deploy:
+  provider: s3
+  access_key_id:
+    secure: MWRKgZ2JZZ5tNAT0mN+R9+Dqel3iKrMCDV4qbsuxDKNy5K1VOJ6picA0dBGjQ36Q6ddO2W6g8RXgAFoiGTXG2feTmQabQh5oMtLMHjz0y6QXXsUxUymhe+gUOUdxBgbaEE6OeFFIqLcZizF8HBjPp38oeLb5xVYQ+PgqWjw6bVU=
+  secret_access_key:
+    secure: ACW4uwx2eTdOaeZdiRpjk852ESRoyEFVopH3lwo4rkoAOqtR+SM/8zTKXFtRRi9C2PFkKYg+1i+Qe+xQpCgktj6MvMvGSQ61GJ+CODisa8tVhUmAXeLVnHYbDvWW7BnYmGCC+T25aKFENooi9vro2h9rdyWR5DTEQTnzEzIhBNM=
+  bucket: "goinstant_test_bucket"
+  on:
+    tags: true
