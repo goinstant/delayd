@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"sync"
 	"time"
 
 	"github.com/streadway/amqp"
@@ -18,12 +19,16 @@ type Server struct {
 	raft       *Raft
 	timer      *Timer
 	shutdownCh chan bool
+	leader     bool
+	m          *sync.Mutex
 }
 
 // Run initializes the Server from a Config, and begins its main loop.
 func (s *Server) Run(c Config) {
 	Info("Starting delayd")
 
+	s.leader = false
+	s.m = new(sync.Mutex)
 	s.shutdownCh = make(chan bool)
 
 	Debug("Creating data dir: ", c.DataDir)
@@ -114,6 +119,10 @@ func (s *Server) resetTimer() {
 // and react accordingly.
 func (s *Server) observeLeaderChanges() {
 	for isLeader := range s.raft.LeaderCh() {
+		s.m.Lock()
+		s.leader = isLeader
+		s.m.Unlock()
+
 		switch isLeader {
 		case true:
 			Debug("Became raft leader")
@@ -141,8 +150,12 @@ func (s *Server) observeNextTime() {
 		case <-s.shutdownCh:
 			return
 		case t := <-s.storage.C:
-			Debug("got time", t)
-			s.timer.Reset(t, false)
+			s.m.Lock()
+			if s.leader {
+				Debug("got time", t)
+				s.timer.Reset(t, false)
+			}
+			s.m.Unlock()
 		}
 	}
 }
