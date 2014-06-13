@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"io"
 	"net"
 	"os"
@@ -20,9 +21,10 @@ const (
 
 	uuidOffset  = 2
 	entryOffset = 18
-)
 
-const logSchemaVersion = 0x0
+	logSchemaVersion  = 0x0
+	snapSchemaVersion = 0x0
+)
 
 // FSM wraps the Storage instance in the raft.FSM interface, allowing raft to apply commands.
 type FSM struct {
@@ -69,13 +71,120 @@ func (fsm *FSM) Apply(l *raft.Log) interface{} {
 }
 
 // Snapshot creates a raft snapshot for fast restore.
-func (*FSM) Snapshot() (raft.FSMSnapshot, error) {
-	return nil, nil
+func (fsm *FSM) Snapshot() (raft.FSMSnapshot, error) {
+	uuids, entries, err := fsm.store.GetAll()
+	snapshot := &Snapshot{uuids, entries}
+	return snapshot, err
 }
 
 // Restore from a raft snapshot
-func (*FSM) Restore(snap io.ReadCloser) error {
+func (fsm *FSM) Restore(snap io.ReadCloser) error {
+	defer snap.Close()
+
+	s, err := NewStorage()
+	if err != nil {
+		return err
+	}
+
+	// swap in the restored storage, with time emission channels.
+	s.c = fsm.store.c
+	s.C = fsm.store.C
+	fsm.store.Close()
+	fsm.store = s
+
+	b := make([]byte, 1)
+	_, err = snap.Read(b)
+	if b[0] != byte(snapSchemaVersion) {
+		msg := "Unknown snapshot schema version"
+		Error(msg)
+		return errors.New(msg)
+	}
+
+	uuid := make([]byte, 16)
+	size := make([]byte, 4)
+
+	count := 0
+	for {
+		_, err = snap.Read(uuid)
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			return err
+		}
+
+		_, err = snap.Read(size)
+		if err != nil {
+			return err
+		}
+
+		eb := make([]byte, bytesToUint32(size))
+		_, err = snap.Read(eb)
+		if err != nil {
+			return err
+		}
+
+		e, err := entryFromBytes(eb)
+		if err != nil {
+			return err
+		}
+
+		err = s.Add(uuid, e)
+		if err != nil {
+			return err
+		}
+
+		count++
+	}
+
+	Debugf("Restored snapshot. entries=%d", count)
 	return nil
+}
+
+// Snapshot holds the data needed to serialize storage
+type Snapshot struct {
+	uuids   [][]byte
+	entries []Entry
+}
+
+// Persist writes a snapshot to a file. We just serialize all active entries.
+func (s *Snapshot) Persist(sink raft.SnapshotSink) error {
+	_, err := sink.Write([]byte{snapSchemaVersion})
+	if err != nil {
+		sink.Cancel()
+		return err
+	}
+
+	for i, e := range s.entries {
+		_, err = sink.Write(s.uuids[i])
+		if err != nil {
+			sink.Cancel()
+			return err
+		}
+
+		b, err := e.ToBytes()
+		if err != nil {
+			sink.Cancel()
+			return err
+		}
+
+		_, err = sink.Write(uint32ToBytes(uint32(len(b))))
+		if err != nil {
+			sink.Cancel()
+			return err
+		}
+
+		_, err = sink.Write(b)
+		if err != nil {
+			sink.Cancel()
+			return err
+		}
+	}
+
+	return sink.Close()
+}
+
+// Release cleans up a snapshot. We don't need to do anything.
+func (s *Snapshot) Release() {
 }
 
 // Raft encapsulates the raft specific logic for startup and shutdown.
@@ -83,10 +192,11 @@ type Raft struct {
 	transport *raft.NetworkTransport
 	mdb       *raftmdb.MDBStore
 	raft      *raft.Raft
+	fsm       *FSM
 }
 
 // NewRaft creates a new Raft instance. raft data is stored under the raft dir in prefix.
-func NewRaft(c RaftConfig, prefix string, storage *Storage) (r *Raft, err error) {
+func NewRaft(c RaftConfig, prefix string) (r *Raft, err error) {
 	r = new(Raft)
 	raftDir := path.Join(prefix, "raft")
 
@@ -147,13 +257,18 @@ func NewRaft(c RaftConfig, prefix string, storage *Storage) (r *Raft, err error)
 
 	r.mdb, err = raftmdb.NewMDBStore(raftDir)
 	if err != nil {
-		Error("Could not create raft store: ", err)
+		Error("Could not create raft store:", err)
 		return
 	}
 
-	fsm := FSM{storage}
+	storage, err := NewStorage()
+	if err != nil {
+		Error("Could not create storage:", err)
+		return
+	}
+	r.fsm = &FSM{storage}
 
-	r.raft, err = raft.NewRaft(config, &fsm, r.mdb, r.mdb, fss, peerStore, r.transport)
+	r.raft, err = raft.NewRaft(config, r.fsm, r.mdb, r.mdb, fss, peerStore, r.transport)
 	if err != nil {
 		Error("Could not initialize raft: ", err)
 		return
@@ -170,6 +285,7 @@ func (r *Raft) Close() {
 		Error("Error shutting down raft: ", err)
 	}
 	r.mdb.Close()
+	r.fsm.store.Close()
 }
 
 // Add wraps the internal raft Apply, for encapsulation!

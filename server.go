@@ -15,7 +15,6 @@ const raftMaxTime = time.Duration(60) * time.Second
 type Server struct {
 	sender     *AmqpSender
 	receiver   *AmqpReceiver
-	storage    *Storage
 	raft       *Raft
 	timer      *Timer
 	shutdownCh chan bool
@@ -48,12 +47,7 @@ func (s *Server) Run(c Config) {
 		Fatal("Could not initialize sender: ", err)
 	}
 
-	s.storage, err = NewStorage()
-	if err != nil {
-		Fatal("Could not initialize storage backend: ", err)
-	}
-
-	s.raft, err = NewRaft(c.Raft, c.DataDir, s.storage)
+	s.raft, err = NewRaft(c.Raft, c.DataDir)
 	if err != nil {
 		Fatal("Could not initialize raft: ", err)
 	}
@@ -100,13 +94,12 @@ func (s *Server) Stop() {
 	s.sender.Close()
 
 	s.raft.Close()
-	s.storage.Close()
 
 	Info("Terminated.")
 }
 
 func (s *Server) resetTimer() {
-	ok, t, err := s.storage.NextTime()
+	ok, t, err := s.raft.fsm.store.NextTime()
 	if err != nil {
 		Fatal("Could not read initial send time from storage: ", err)
 	}
@@ -149,7 +142,7 @@ func (s *Server) observeNextTime() {
 		select {
 		case <-s.shutdownCh:
 			return
-		case t := <-s.storage.C:
+		case t := <-s.raft.fsm.store.C:
 			s.m.Lock()
 			if s.leader {
 				Debug("got time", t)
@@ -161,7 +154,7 @@ func (s *Server) observeNextTime() {
 }
 
 func (s *Server) timerSend(t time.Time) {
-	uuids, entries, err := s.storage.Get(t)
+	uuids, entries, err := s.raft.fsm.store.Get(t)
 	if err != nil {
 		Fatal("Could not read entries from db: ", err)
 	}
