@@ -7,7 +7,7 @@ import (
 	"github.com/streadway/amqp"
 )
 
-const consumerTag = "delayd"
+const consumerTag = "delayd-"
 
 // Shutdown is a base class that is inheritable by any other class that may want
 // to send a shutdown signal over a channel
@@ -55,6 +55,8 @@ type AmqpReceiver struct {
 	metaMessages chan (<-chan amqp.Delivery)
 	paused       bool
 
+	tagCount uint
+
 	ac AmqpConfig
 	m  *sync.Mutex
 }
@@ -73,6 +75,7 @@ func NewAmqpReceiver(ac AmqpConfig) (receiver *AmqpReceiver, err error) {
 	receiver = new(AmqpReceiver)
 	receiver.ac = ac
 	receiver.paused = true
+	receiver.tagCount = 0
 	receiver.m = new(sync.Mutex)
 
 	err = receiver.dial(ac.URL)
@@ -201,8 +204,8 @@ func (a AmqpReceiver) Start() (err error) {
 	}
 
 	a.paused = false
-	//XXX set Qos here to match incoming concurrency
-	m, err := a.channel.Consume(a.ac.Queue.Name, consumerTag, a.ac.Queue.AutoAck, a.ac.Queue.Exclusive, a.ac.Queue.NoLocal, a.ac.Queue.NoWait, nil)
+	a.tagCount++
+	m, err := a.channel.Consume(a.ac.Queue.Name, consumerTag+string(a.tagCount), a.ac.Queue.AutoAck, a.ac.Queue.Exclusive, a.ac.Queue.NoLocal, a.ac.Queue.NoWait, nil)
 	a.metaMessages <- m
 	return
 }
@@ -215,7 +218,7 @@ func (a AmqpReceiver) Pause() error {
 		return nil
 	}
 	a.paused = true
-	return a.channel.Cancel(consumerTag, false)
+	return a.channel.Cancel(consumerTag+string(a.tagCount), false)
 }
 
 // AmqpSender sends delayd entries over amqp after their timeout
