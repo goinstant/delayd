@@ -235,3 +235,84 @@ func TestNextTimeNoEntries(t *testing.T) {
 	assert.Nil(t, err)
 	assert.False(t, ok)
 }
+
+func TestChannelSendsNextTimeOnAdd(t *testing.T) {
+	s, err := NewStorage()
+	assert.Nil(t, err)
+	defer s.Close()
+
+	e := Entry{
+		Target: "something",
+		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
+	}
+	s.Add(dummyUUID, e)
+
+	next := <-s.C
+	assert.Equal(t, next, e.SendAt)
+
+	e2 := Entry{
+		Target: "something",
+		SendAt: time.Now().Add(time.Duration(1) * time.Minute),
+	}
+	s.Add(dummyUUID2, e2)
+
+	next = <-s.C
+	assert.Equal(t, next, e2.SendAt)
+}
+
+func TestChannelWontSendNextTimeIfLater(t *testing.T) {
+	s, err := NewStorage()
+	assert.Nil(t, err)
+	defer s.Close()
+
+	e := Entry{
+		Target: "something",
+		SendAt: time.Now().Add(time.Duration(1) * time.Minute),
+	}
+	s.Add(dummyUUID, e)
+
+	next := <-s.C
+	assert.Equal(t, next, e.SendAt)
+
+	e2 := Entry{
+		Target: "something",
+		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
+	}
+	s.Add(dummyUUID2, e2)
+
+	select {
+	case <-s.C:
+		assert.Fail(t, "Should not have gotten next time for older entry")
+	default:
+		break
+	}
+}
+
+func TestChannelSendsNextTimeOnRemove(t *testing.T) {
+	s, err := NewStorage()
+	assert.Nil(t, err)
+	defer s.Close()
+
+	e := Entry{
+		Target: "something",
+		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
+	}
+	s.Add(dummyUUID, e)
+
+	next := <-s.C
+	assert.Equal(t, next, e.SendAt)
+
+	e2 := Entry{
+		Target: "something",
+		SendAt: time.Now().Add(time.Duration(1) * time.Minute),
+	}
+	s.Add(dummyUUID2, e2)
+
+	next = <-s.C
+	assert.Equal(t, next, e2.SendAt)
+
+	s.Remove(dummyUUID2)
+
+	next = <-s.C
+	assert.Equal(t, next, e.SendAt)
+}
