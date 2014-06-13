@@ -19,5 +19,6 @@ deploy:
   secret_access_key:
     secure: ACW4uwx2eTdOaeZdiRpjk852ESRoyEFVopH3lwo4rkoAOqtR+SM/8zTKXFtRRi9C2PFkKYg+1i+Qe+xQpCgktj6MvMvGSQ61GJ+CODisa8tVhUmAXeLVnHYbDvWW7BnYmGCC+T25aKFENooi9vro2h9rdyWR5DTEQTnzEzIhBNM=
   bucket: "goinstant_test_bucket"
+  skip_cleanup: true
   on:
     tags: true
