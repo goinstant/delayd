@@ -1,7 +1,9 @@
 package main
 
 import (
+	"log"
 	"os"
+	"path"
 	"sync"
 	"time"
 
@@ -24,15 +26,25 @@ type Server struct {
 
 // Run initializes the Server from a Config, and begins its main loop.
 func (s *Server) Run(c Config) {
-	Info("Starting delayd")
-
 	s.leader = false
 	s.m = new(sync.Mutex)
 	s.shutdownCh = make(chan bool)
 
+	if len(c.LogDir) != 0 {
+		Debug("Creating log dir: ", c.LogDir)
+		err := os.MkdirAll(c.LogDir, 0755)
+		if err != nil {
+			Fatal("Error creating log dir: ", err)
+		}
+		logFile := path.Join(c.LogDir, "delayd.log")
+		logOutput, err := os.OpenFile(logFile, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0666)
+		log.SetOutput(logOutput)
+	}
+
+	Info("Starting delayd")
+
 	Debug("Creating data dir: ", c.DataDir)
 	err := os.MkdirAll(c.DataDir, 0755)
-
 	if err != nil {
 		Fatal("Error creating data dir: ", err)
 	}
@@ -47,7 +59,7 @@ func (s *Server) Run(c Config) {
 		Fatal("Could not initialize sender: ", err)
 	}
 
-	s.raft, err = NewRaft(c.Raft, c.DataDir)
+	s.raft, err = NewRaft(c.Raft, c.DataDir, c.LogDir)
 	if err != nil {
 		Fatal("Could not initialize raft: ", err)
 	}
