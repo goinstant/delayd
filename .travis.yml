@@ -2,6 +2,8 @@ language: go
 go: 1.2
 install: make deps
 script: make ci
+after_success: make && mkdir release && tar -cvzf release/delayd-$TRAVIS_TAG.tar.gz
+  delayd
 services:
 - rabbitmq
 notifications:
@@ -12,3 +14,15 @@ notifications:
     - '<img src="https://db.tt/K0gEyZVh">&nbsp;(%{repository_slug})&nbsp;<a href="%{build_url}">%{branch}</a>
       - <a href="%{compare_url}">%{commit}</a> : %{message}'
     format: html
+deploy:
+  provider: s3
+  access_key_id:
+    secure: MWRKgZ2JZZ5tNAT0mN+R9+Dqel3iKrMCDV4qbsuxDKNy5K1VOJ6picA0dBGjQ36Q6ddO2W6g8RXgAFoiGTXG2feTmQabQh5oMtLMHjz0y6QXXsUxUymhe+gUOUdxBgbaEE6OeFFIqLcZizF8HBjPp38oeLb5xVYQ+PgqWjw6bVU=
+  secret_access_key:
+    secure: ACW4uwx2eTdOaeZdiRpjk852ESRoyEFVopH3lwo4rkoAOqtR+SM/8zTKXFtRRi9C2PFkKYg+1i+Qe+xQpCgktj6MvMvGSQ61GJ+CODisa8tVhUmAXeLVnHYbDvWW7BnYmGCC+T25aKFENooi9vro2h9rdyWR5DTEQTnzEzIhBNM=
+  bucket:
+    secure: YcubrWLz+zmk9Y5d1YZQlq5E7taSYB8pd0SLkSlMptSQrMRRBJ1kDmOehW6qneik4jxERiMSRfckZuPZtHsv0DQTzBc+RZxIrk8zsv6d9oyDd6Rs3fKepA/L0CsjuOU2+bU9GWbhB8qW3S641K65yuVCJY+HREIcgM7T12SKDyU=
+  local-dir: release
+  on:
+    tags: true
+    all_branches: true
