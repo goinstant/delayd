@@ -42,7 +42,7 @@ func NewTimer(sendFunc SendFunc) (t *Timer) {
 
 // Stop gracefully stops the timer, ensuring any running processing is complete.
 func (t *Timer) Stop() {
-	t.shutdown <- false
+	close(t.shutdown)
 	t.Pause()
 }
 
@@ -60,6 +60,7 @@ func (t *Timer) Reset(nextSend time.Time, force bool) {
 		return
 	}
 
+	Debug("Timer reset to", nextSend)
 	t.timerRunning = true
 	t.timer.Reset(nextSend.Sub(time.Now()))
 	t.nextSend = nextSend
@@ -76,7 +77,7 @@ func (t *Timer) Pause() {
 func (t *Timer) timerLoop() {
 	for {
 		select {
-		case _ = <-t.shutdown:
+		case <-t.shutdown:
 			return
 		case sendTime := <-t.timer.C:
 			t.Pause()

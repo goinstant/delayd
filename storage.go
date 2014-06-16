@@ -42,7 +42,7 @@ func NewStorage() (s *Storage, err error) {
 		return
 	}
 
-	c := make(chan time.Time)
+	c := make(chan time.Time, 10)
 	s.C = c
 	s.c = c
 
@@ -213,13 +213,8 @@ func (s *Storage) Add(uuid []byte, e Entry) (err error) {
 
 	err = txn.Commit()
 
-	if err == nil && ok {
-		select {
-		case s.c <- t:
-			break
-		default:
-			break
-		}
+	if err == nil && ok && e.SendAt.Equal(t) {
+		s.c <- t
 	}
 
 	return
@@ -401,13 +396,7 @@ func (s *Storage) Remove(uuid []byte) (err error) {
 	err = txn.Commit()
 
 	if err == nil && ok {
-		select {
-		case s.c <- t:
-			Debug("Setting next time")
-			break
-		default:
-			break
-		}
+		s.c <- t
 	}
 
 	return
