@@ -196,10 +196,24 @@ type Raft struct {
 }
 
 // NewRaft creates a new Raft instance. raft data is stored under the raft dir in prefix.
-func NewRaft(c RaftConfig, prefix string) (r *Raft, err error) {
+func NewRaft(c RaftConfig, prefix string, logDir string) (r *Raft, err error) {
 	r = new(Raft)
-	raftDir := path.Join(prefix, "raft")
 
+	config := raft.DefaultConfig()
+	config.EnableSingleNode = c.Single
+
+	var logOutput *os.File
+	if logDir != "\n" {
+		logFile := path.Join(logDir, "raft.log")
+		logOutput, err = os.OpenFile(logFile, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0666)
+		if err != nil {
+			Fatal("Could not open raft log file: ", err)
+		}
+
+		config.LogOutput = logOutput
+	}
+
+	raftDir := path.Join(prefix, "raft")
 	err = os.MkdirAll(raftDir, 0755)
 	if err != nil {
 		Fatal("Could not create raft storage dir: ", err)
@@ -230,9 +244,6 @@ func NewRaft(c RaftConfig, prefix string) (r *Raft, err error) {
 	}
 
 	peerStore := raft.NewJSONPeers(raftDir, r.transport)
-
-	config := raft.DefaultConfig()
-	config.EnableSingleNode = c.Single
 
 	if !c.Single {
 		var peers []net.Addr

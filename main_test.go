@@ -80,6 +80,9 @@ func TestInAndOut(t *testing.T) {
 	conf.DataDir, err = ioutil.TempDir("", "delayd-testint")
 	assert.Nil(t, err)
 	defer os.Remove(conf.DataDir)
+	conf.LogDir, err = ioutil.TempDir("", "delayd-testint-logs")
+	assert.Nil(t, err)
+	defer os.Remove(conf.LogDir)
 
 	s := Server{}
 	go s.Run(conf)

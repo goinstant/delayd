@@ -46,6 +46,7 @@ type RaftConfig struct {
 type Config struct {
 	Amqp    AmqpConfig `toml:"amqp"`
 	DataDir string     `toml:"data_dir"`
+	LogDir  string     `toml:"log_dir"`
 	Raft    RaftConfig
 }
 
