@@ -213,7 +213,7 @@ func (s *Storage) Add(uuid []byte, e Entry) (err error) {
 
 	err = txn.Commit()
 
-	if err == nil && ok && e.SendAt.Equal(t) {
+	if err == nil && ok {
 		s.c <- t
 	}
 
@@ -355,6 +355,10 @@ func (s *Storage) innerRemove(txn *mdb.Txn, dbis []mdb.DBI, uuid []byte) (err er
 		return
 	}
 	defer cursor.Close()
+
+	if e.Key == "" {
+		return
+	}
 
 	_, _, err = cursor.Get([]byte(e.Key), mdb.FIRST)
 	if err == mdb.NotFound {

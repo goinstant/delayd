@@ -186,7 +186,7 @@ func (s *Server) timerSend(t time.Time) {
 			if err.Code != 504 {
 				Fatal("Could not send entry: ", err)
 			} else {
-				Warnf("channel/connection not set up for exchange `%s`, message will be deleted", e.Target)
+				Warnf("channel/connection not set up for exchange `%s`, message will be deleted", e.Target, err)
 			}
 		}
 

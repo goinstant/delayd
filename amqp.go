@@ -146,15 +146,20 @@ func NewAmqpReceiver(ac AmqpConfig) (receiver *AmqpReceiver, err error) {
 
 				eWrapper := EntryWrapper{Msg: msg}
 
-				delay, ok := msg.Headers["delayd-delay"].(int64)
-				if !ok {
+				var delay int64
+				switch val := msg.Headers["delayd-delay"].(type) {
+				case int32:
+					delay = int64(val)
+				case int64:
+					delay = val
+				default:
 					Warn(msg)
 					Warn("Bad/missing delay. discarding message")
 					eWrapper.Done(true)
-					continue
 				}
 				entry.SendAt = time.Now().Add(time.Duration(delay) * time.Millisecond)
 
+				var ok bool
 				entry.Target, ok = msg.Headers["delayd-target"].(string)
 				if !ok {
 					Warn("Bad/missing target. discarding message")
@@ -169,20 +174,9 @@ func NewAmqpReceiver(ac AmqpConfig) (receiver *AmqpReceiver, err error) {
 				}
 
 				// optional headers that will be relayed
-				h, ok = msg.Headers["content-type"].(string)
-				if ok {
-					entry.ContentType = h
-				}
-
-				h, ok = msg.Headers["content-encoding"].(string)
-				if ok {
-					entry.ContentEncoding = h
-				}
-
-				h, ok = msg.Headers["correlation-id"].(string)
-				if ok {
-					entry.CorrelationID = h
-				}
+				entry.ContentType = msg.ContentType
+				entry.ContentEncoding = msg.ContentEncoding
+				entry.CorrelationID = msg.CorrelationId
 
 				entry.Body = msg.Body
 				eWrapper.Entry = entry
