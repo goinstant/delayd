@@ -260,7 +260,7 @@ func TestChannelSendsNextTimeOnAdd(t *testing.T) {
 	assert.Equal(t, next, e2.SendAt)
 }
 
-func TestChannelWontSendNextTimeIfLater(t *testing.T) {
+func TestChannelSendNextTimeIfLater(t *testing.T) {
 	s, err := NewStorage()
 	assert.Nil(t, err)
 	defer s.Close()
@@ -280,12 +280,8 @@ func TestChannelWontSendNextTimeIfLater(t *testing.T) {
 	}
 	s.Add(dummyUUID2, e2)
 
-	select {
-	case <-s.C:
-		assert.Fail(t, "Should not have gotten next time for older entry")
-	default:
-		break
-	}
+	next = <-s.C
+	assert.Equal(t, next, e.SendAt)
 }
 
 func TestChannelSendsNextTimeOnRemove(t *testing.T) {
