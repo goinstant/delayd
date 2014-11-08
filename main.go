@@ -74,18 +74,27 @@ func main() {
 	app.Version = version
 
 	flags := []cli.Flag{
-		cli.StringFlag{"config, c", "/etc/delayd.toml", "config file"},
+		cli.StringFlag{
+			Name: "config, c", Value: "/etc/delayd.toml", Usage: "config file"},
 	}
 
 	cliFlags := []cli.Flag{
-		cli.StringFlag{"config, c", "/etc/delayd.toml", "config file"},
-		cli.StringFlag{"exchange, e", "delayd-cli", "response exchange name"},
-		cli.StringFlag{"key, k", "delayd-key", "key to store message under"},
-		cli.BoolFlag{"repl, r", "launch client in REPL mode"},
-		cli.StringFlag{"file, f ", "msg.json", "read message from file"},
-		cli.IntFlag{"delay, d", 1000, "expiry time"},
-		cli.StringFlag{"out, o", "", "write delayd response to file"},
-		cli.BoolFlag{"no-wait, n", "do not wait for amqp response before exiting"},
+		cli.StringFlag{
+			Name: "config, c", Value: "/etc/delayd.toml", Usage: "config file"},
+		cli.StringFlag{
+			Name: "exchange, e", Value: "delayd-cli", Usage: "response exchange name"},
+		cli.StringFlag{
+			Name: "key, k", Value: "delayd-key", Usage: "key to store message under"},
+		cli.BoolFlag{
+			Name: "repl, r", Usage: "launch client in REPL mode"},
+		cli.StringFlag{
+			Name: "file, f ", Value: "msg.json", Usage: "read message from file"},
+		cli.IntFlag{
+			Name: "delay, d", Value: 1000, Usage: "expiry time"},
+		cli.StringFlag{
+			Name: "out, o", Usage: "write delayd response to file"},
+		cli.BoolFlag{
+			Name: "no-wait, n", Usage: "do not wait for amqp response before exiting"},
 	}
 
 	app.Commands = []cli.Command{
