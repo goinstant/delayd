@@ -19,7 +19,7 @@ const (
 // testing
 type Client struct {
 	Shutdown
-	amqpBase *AmqpBase
+	amqpBase *AMQPBase
 
 	exchange       string
 	key            string
@@ -70,8 +70,8 @@ func (c *Client) send(cliMessages ClientMessages, conf Config, params ...int) er
 			Body: []byte(msg.Value),
 		}
 
-		exchange := conf.Amqp.Exchange.Name
-		queue := conf.Amqp.Queue.Name
+		exchange := conf.AMQP.Exchange.Name
+		queue := conf.AMQP.Queue.Name
 		err := c.amqpBase.channel.Publish(exchange, queue, true, false, pub)
 		if err != nil {
 			return err
@@ -155,9 +155,9 @@ func (c *Client) listenResponse(messages <-chan amqp.Delivery) {
 // Run is called to set up amqp options and then relay messages to the server
 // over AMQP.
 func (c *Client) Run(conf Config) error {
-	amqpBase := new(AmqpBase)
+	amqpBase := new(AMQPBase)
 
-	conn, err := amqp.Dial(conf.Amqp.URL)
+	conn, err := amqp.Dial(conf.AMQP.URL)
 	if err != nil {
 		Fatal("Unable to dial AMQP:", err)
 	}
@@ -171,14 +171,14 @@ func (c *Client) Run(conf Config) error {
 	amqpBase.channel = ch
 	c.amqpBase = amqpBase
 
-	exch := conf.Amqp.Exchange
+	exch := conf.AMQP.Exchange
 	Debug("declaring exchange:", c.exchange)
 	err = ch.ExchangeDeclare(c.exchange, exch.Kind, exch.Durable, exch.AutoDelete, exch.Internal, exch.NoWait, nil)
 	if err != nil {
 		Fatal("Unable to declare exchange:", err)
 	}
 
-	q := conf.Amqp.Queue
+	q := conf.AMQP.Queue
 	queue, err := ch.QueueDeclare("", q.Durable, q.AutoDelete, q.Exclusive, q.NoWait, nil)
 	if err != nil {
 		Fatal("Unable to declare queue:", err)

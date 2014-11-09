@@ -16,7 +16,7 @@ const raftMaxTime = time.Duration(60) * time.Second
 // Server is the delayd server. It handles the server lifecycle (startup, clean shutdown)
 type Server struct {
 	sender     Sender
-	receiver   *AmqpReceiver
+	receiver   *AMQPReceiver
 	raft       *Raft
 	timer      *Timer
 	shutdownCh chan bool
@@ -49,12 +49,12 @@ func (s *Server) Run(c Config) {
 		Fatal("Error creating data dir: ", err)
 	}
 
-	s.receiver, err = NewAmqpReceiver(c.Amqp)
+	s.receiver, err = NewAMQPReceiver(c.AMQP)
 	if err != nil {
 		Fatal("Could not initialize receiver: ", err)
 	}
 
-	s.sender, err = NewAmqpSender(c.Amqp.URL)
+	s.sender, err = NewAMQPSender(c.AMQP.URL)
 	if err != nil {
 		Fatal("Could not initialize sender: ", err)
 	}

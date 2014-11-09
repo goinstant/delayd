@@ -15,9 +15,9 @@ type Shutdown struct {
 	shutdown chan bool
 }
 
-// AmqpBase is the base class for amqp senders and recievers, containing the
+// AMQPBase is the base class for amqp senders and recievers, containing the
 // startup and shutdown logic.
-type AmqpBase struct {
+type AMQPBase struct {
 	Shutdown
 
 	connection *amqp.Connection
@@ -26,13 +26,13 @@ type AmqpBase struct {
 
 // Close the connection to amqp gracefully. Subclasses should ensure they finish
 // all in-flight processing.
-func (a AmqpBase) Close() {
+func (a AMQPBase) Close() {
 	a.channel.Close()
 	a.connection.Close()
 }
 
 // Connect to AMQP, and open a communication channel.
-func (a *AmqpBase) dial(amqpURL string) (err error) {
+func (a *AMQPBase) dial(amqpURL string) (err error) {
 	a.connection, err = amqp.Dial(amqpURL)
 	if err != nil {
 		Error("Could not connect to AMQP: ", err)
@@ -48,31 +48,31 @@ func (a *AmqpBase) dial(amqpURL string) (err error) {
 	return
 }
 
-// AmqpReceiver receives delayd commands over amqp
-type AmqpReceiver struct {
-	AmqpBase
+// AMQPReceiver receives delayd commands over amqp
+type AMQPReceiver struct {
+	AMQPBase
 	C            <-chan EntryWrapper
 	metaMessages chan (<-chan amqp.Delivery)
 	paused       bool
 
 	tagCount uint
 
-	ac AmqpConfig
+	ac AMQPConfig
 	m  *sync.Mutex
 }
 
 // Close overwrites the base class close because we need to do some additional
 // work for the receiver (signalling the shutdown channel)
-func (a AmqpReceiver) Close() {
+func (a AMQPReceiver) Close() {
 	a.Pause()
 	a.shutdown <- true
-	a.AmqpBase.Close()
+	a.AMQPBase.Close()
 }
 
-// NewAmqpReceiver creates a new AmqpReceiver based on the provided AmqpConfig,
+// NewAMQPReceiver creates a new AMQPReceiver based on the provided AMQPConfig,
 // and starts it listening for commands.
-func NewAmqpReceiver(ac AmqpConfig) (receiver *AmqpReceiver, err error) {
-	receiver = new(AmqpReceiver)
+func NewAMQPReceiver(ac AMQPConfig) (receiver *AMQPReceiver, err error) {
+	receiver = new(AMQPReceiver)
 	receiver.ac = ac
 	receiver.paused = true
 	receiver.tagCount = 0
@@ -190,7 +190,7 @@ func NewAmqpReceiver(ac AmqpConfig) (receiver *AmqpReceiver, err error) {
 }
 
 // Start or restart listening for messages on the queue
-func (a AmqpReceiver) Start() (err error) {
+func (a AMQPReceiver) Start() (err error) {
 	a.m.Lock()
 	defer a.m.Unlock()
 	if !a.paused {
@@ -205,7 +205,7 @@ func (a AmqpReceiver) Start() (err error) {
 }
 
 // Pause listening for messages on the queue
-func (a AmqpReceiver) Pause() error {
+func (a AMQPReceiver) Pause() error {
 	a.m.Lock()
 	defer a.m.Unlock()
 	if a.paused {
@@ -215,16 +215,16 @@ func (a AmqpReceiver) Pause() error {
 	return a.channel.Cancel(consumerTag+string(a.tagCount), false)
 }
 
-// AmqpSender sends delayd entries over amqp after their timeout
-type AmqpSender struct {
-	AmqpBase
+// AMQPSender sends delayd entries over amqp after their timeout
+type AMQPSender struct {
+	AMQPBase
 
 	C chan<- EntryWrapper
 }
 
-// NewAmqpSender creates a new AmqpSender connected to the given AMQP URL.
-func NewAmqpSender(amqpURL string) (sender *AmqpSender, err error) {
-	sender = new(AmqpSender)
+// NewAMQPSender creates a new AMQPSender connected to the given AMQP URL.
+func NewAMQPSender(amqpURL string) (sender *AMQPSender, err error) {
+	sender = new(AMQPSender)
 
 	err = sender.dial(amqpURL)
 	if err != nil {
@@ -236,7 +236,7 @@ func NewAmqpSender(amqpURL string) (sender *AmqpSender, err error) {
 
 // Send sends a delayd entry over AMQP, using the entry's Target as the publish
 // exchange.
-func (s AmqpSender) Send(e Entry) (err error) {
+func (s AMQPSender) Send(e Entry) (err error) {
 	msg := amqp.Publishing{
 		DeliveryMode:    amqp.Persistent,
 		Timestamp:       time.Now(),

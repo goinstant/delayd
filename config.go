@@ -4,8 +4,8 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// AmqpQueue holds configuration for the queue used by the AmqpReceiver
-type AmqpQueue struct {
+// AMQPQueue holds configuration for the queue used by the AMQPReceiver
+type AMQPQueue struct {
 	Name string   `toml:"name"`
 	Bind []string `toml:"bind"`
 
@@ -17,8 +17,8 @@ type AmqpQueue struct {
 	NoWait     bool `toml:"no_wait"`
 }
 
-// AmqpExchange holds configuration for the exchange used by the AmqpReceiver
-type AmqpExchange struct {
+// AMQPExchange holds configuration for the exchange used by the AMQPReceiver
+type AMQPExchange struct {
 	Name string `toml:"name"`
 	Kind string `toml:"kind"`
 
@@ -26,12 +26,12 @@ type AmqpExchange struct {
 	Durable, Internal, NoWait bool
 }
 
-// AmqpConfig holds configuration for AMQP senders and receivers.
-type AmqpConfig struct {
+// AMQPConfig holds configuration for AMQP senders and receivers.
+type AMQPConfig struct {
 	URL      string       `toml:"url"`
-	Exchange AmqpExchange `toml:"exchange"`
+	Exchange AMQPExchange `toml:"exchange"`
 	Qos      int          `toml:"qos"`
-	Queue    AmqpQueue    `toml:"queue"`
+	Queue    AMQPQueue    `toml:"queue"`
 }
 
 // RaftConfig holds configuration for Raft concensus
@@ -44,7 +44,7 @@ type RaftConfig struct {
 
 // Config holds delayd configuration
 type Config struct {
-	Amqp    AmqpConfig `toml:"amqp"`
+	AMQP    AMQPConfig `toml:"amqp"`
 	DataDir string     `toml:"data_dir"`
 	LogDir  string     `toml:"log_dir"`
 	Raft    RaftConfig
