@@ -15,7 +15,7 @@ const raftMaxTime = time.Duration(60) * time.Second
 
 // Server is the delayd server. It handles the server lifecycle (startup, clean shutdown)
 type Server struct {
-	sender     *AmqpSender
+	sender     Sender
 	receiver   *AmqpReceiver
 	raft       *Raft
 	timer      *Timer

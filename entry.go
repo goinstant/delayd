@@ -69,3 +69,10 @@ func (e Entry) ToBytes() (b []byte, err error) {
 	err = enc.Encode(e)
 	return
 }
+
+// Sender describes the interface for sending delayd entries after their time
+// has lapsed.
+type Sender interface {
+	Send(e Entry) (err error)
+	Close()
+}
