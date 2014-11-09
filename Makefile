@@ -48,6 +48,13 @@ lint:
 	$(LINT) .
 	[ -z "$$($(LINT) .)" ]
 
+config:
+	if [ -f delayd.toml.local ]; then \
+	  cp delayd.toml.local delayd.toml; \
+	else \
+	  cp delayd.toml.sample delayd.toml; \
+	fi
+
 cover:
 	go test -cover ./...
 
@@ -61,4 +68,4 @@ funccov:
 	go test -coverprofile /tmp/delayd-coverprof.cov ./...
 	go tool cover -func /tmp/delayd-coverprof.cov
 
-ci: check testint
+ci: config check testint
