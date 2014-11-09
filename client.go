@@ -19,7 +19,7 @@ const (
 // testing
 type Client struct {
 	Shutdown
-	amqpBase *AMQPBase
+	amqpDialer *AMQPDialer
 
 	exchange       string
 	key            string
@@ -72,7 +72,7 @@ func (c *Client) send(cliMessages ClientMessages, conf Config, params ...int) er
 
 		exchange := conf.AMQP.Exchange.Name
 		queue := conf.AMQP.Queue.Name
-		err := c.amqpBase.channel.Publish(exchange, queue, true, false, pub)
+		err := c.amqpDialer.channel.Publish(exchange, queue, true, false, pub)
 		if err != nil {
 			return err
 		}
@@ -155,21 +155,21 @@ func (c *Client) listenResponse(messages <-chan amqp.Delivery) {
 // Run is called to set up amqp options and then relay messages to the server
 // over AMQP.
 func (c *Client) Run(conf Config) error {
-	amqpBase := new(AMQPBase)
+	amqpDialer := new(AMQPDialer)
 
 	conn, err := amqp.Dial(conf.AMQP.URL)
 	if err != nil {
 		Fatal("Unable to dial AMQP:", err)
 	}
 
-	amqpBase.connection = conn
-	ch, err := amqpBase.connection.Channel()
+	amqpDialer.connection = conn
+	ch, err := amqpDialer.connection.Channel()
 	if err != nil {
 		Fatal("Unable to create amqp channel:", err)
 	}
 
-	amqpBase.channel = ch
-	c.amqpBase = amqpBase
+	amqpDialer.channel = ch
+	c.amqpDialer = amqpDialer
 
 	exch := conf.AMQP.Exchange
 	Debug("declaring exchange:", c.exchange)
@@ -220,5 +220,5 @@ func (c *Client) Stop() {
 		c.lock.Wait()
 	}
 
-	c.amqpBase.Close()
+	c.amqpDialer.Close()
 }
