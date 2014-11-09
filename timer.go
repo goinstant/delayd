@@ -1,4 +1,4 @@
-package main
+package delayd
 
 import (
 	"sync"
@@ -13,14 +13,12 @@ type SendFunc func(time.Time)
 // Timer handles triggering event emission, and coordination between Storage
 // and the Sender
 type Timer struct {
-	Shutdown
-
+	shutdown     chan bool
 	timerRunning bool
 	timer        *time.Timer
 	nextSend     time.Time
 	m            *sync.Mutex
-
-	sendFunc SendFunc
+	sendFunc     SendFunc
 }
 
 // NewTimer creates a new timer instance, and starts its main loop

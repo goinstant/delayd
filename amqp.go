@@ -1,4 +1,4 @@
-package main
+package delayd
 
 import (
 	"sync"
@@ -9,38 +9,30 @@ import (
 
 const consumerTag = "delayd-"
 
-// Shutdown is a base class that is composable by any other class that may want
-// to send a shutdown signal over a channel
-type Shutdown struct {
-	shutdown chan bool
-}
-
-// AMQPDialer is a wrapper for amqp dialer.
-type AMQPDialer struct {
-	Shutdown
-
-	connection *amqp.Connection
-	channel    *amqp.Channel
+// AMQP manages amqp a connection and channel.
+type AMQP struct {
+	Channel    *amqp.Channel
+	Connection *amqp.Connection
 }
 
 // Close the connection to amqp gracefully. A caller should ensure they finish
 // all in-flight processing.
-func (a *AMQPDialer) Close() {
-	a.channel.Close()
-	a.connection.Close()
+func (a *AMQP) Close() {
+	a.Channel.Close()
+	a.Connection.Close()
 }
 
-// Dial connects to AMQP, and open a communication channel.
-func (a *AMQPDialer) Dial(url string) (err error) {
-	a.connection, err = amqp.Dial(url)
+// Dial connects to , and open a communication channel.
+func (a *AMQP) Dial(url string) (err error) {
+	a.Connection, err = amqp.Dial(url)
 	if err != nil {
-		Error("Could not connect to AMQP: ", err)
+		Error("Could not connect to : ", err)
 		return
 	}
 
-	a.channel, err = a.connection.Channel()
+	a.Channel, err = a.Connection.Channel()
 	if err != nil {
-		Error("Could not open AMQP channel: ", err)
+		Error("Could not open  channel: ", err)
 		return
 	}
 
@@ -49,26 +41,26 @@ func (a *AMQPDialer) Dial(url string) (err error) {
 
 // AMQPReceiver receives delayd commands over amqp
 type AMQPReceiver struct {
-	AMQPDialer
-	C            <-chan EntryWrapper
+	AMQP
+	C <-chan EntryWrapper
+
+	shutdown     chan bool
 	metaMessages chan (<-chan amqp.Delivery)
 	paused       bool
-
-	tagCount uint
-
-	ac AMQPConfig
-	m  *sync.Mutex
+	tagCount     uint
+	ac           AMQPConfig
+	m            *sync.Mutex
 }
 
 // Close overwrites the base class close because we need to do some additional
 // work for the receiver (signalling the shutdown channel)
-func (a AMQPReceiver) Close() {
+func (a *AMQPReceiver) Close() {
 	a.Pause()
 	a.shutdown <- true
-	a.AMQPDialer.Close()
+	a.AMQP.Close()
 }
 
-// NewAMQPReceiver creates a new AMQPReceiver based on the provided AMQPConfig,
+// NewAMQPReceiver creates a new Receiver based on the provided Config,
 // and starts it listening for commands.
 func NewAMQPReceiver(ac AMQPConfig) (receiver *AMQPReceiver, err error) {
 	receiver = new(AMQPReceiver)
@@ -83,26 +75,26 @@ func NewAMQPReceiver(ac AMQPConfig) (receiver *AMQPReceiver, err error) {
 	}
 
 	Debug("Setting channel QoS to", ac.Qos)
-	err = receiver.channel.Qos(ac.Qos, 0, false)
+	err = receiver.Channel.Qos(ac.Qos, 0, false)
 	if err != nil {
 		return
 	}
 
-	err = receiver.channel.ExchangeDeclare(ac.Exchange.Name, ac.Exchange.Kind, ac.Exchange.Durable, ac.Exchange.AutoDelete, ac.Exchange.Internal, ac.Exchange.NoWait, nil)
+	err = receiver.Channel.ExchangeDeclare(ac.Exchange.Name, ac.Exchange.Kind, ac.Exchange.Durable, ac.Exchange.AutoDelete, ac.Exchange.Internal, ac.Exchange.NoWait, nil)
 	if err != nil {
-		Error("Could not declare AMQP Exchange: ", err)
+		Error("Could not declare  Exchange: ", err)
 		return
 	}
 
-	queue, err := receiver.channel.QueueDeclare(ac.Queue.Name, ac.Queue.Durable, ac.Queue.AutoDelete, ac.Queue.Exclusive, ac.Queue.NoWait, nil)
+	queue, err := receiver.Channel.QueueDeclare(ac.Queue.Name, ac.Queue.Durable, ac.Queue.AutoDelete, ac.Queue.Exclusive, ac.Queue.NoWait, nil)
 	if err != nil {
-		Error("Could not declare AMQP Queue: ", err)
+		Error("Could not declare  Queue: ", err)
 		return
 	}
 
 	for _, exch := range ac.Queue.Bind {
 		Debugf("Binding queue %s to exchange %s", queue.Name, exch)
-		err = receiver.channel.QueueBind(queue.Name, "delayd", exch, ac.Queue.NoWait, nil)
+		err = receiver.Channel.QueueBind(queue.Name, "delayd", exch, ac.Queue.NoWait, nil)
 		if err != nil {
 			// XXX un-fatal this like the other errors
 			Fatalf("Error binding queue %s to Exchange %s", queue.Name, exch)
@@ -189,7 +181,7 @@ func NewAMQPReceiver(ac AMQPConfig) (receiver *AMQPReceiver, err error) {
 }
 
 // Start or restart listening for messages on the queue
-func (a AMQPReceiver) Start() (err error) {
+func (a *AMQPReceiver) Start() (err error) {
 	a.m.Lock()
 	defer a.m.Unlock()
 	if !a.paused {
@@ -198,30 +190,30 @@ func (a AMQPReceiver) Start() (err error) {
 
 	a.paused = false
 	a.tagCount++
-	m, err := a.channel.Consume(a.ac.Queue.Name, consumerTag+string(a.tagCount), a.ac.Queue.AutoAck, a.ac.Queue.Exclusive, a.ac.Queue.NoLocal, a.ac.Queue.NoWait, nil)
+	m, err := a.Channel.Consume(a.ac.Queue.Name, consumerTag+string(a.tagCount), a.ac.Queue.AutoAck, a.ac.Queue.Exclusive, a.ac.Queue.NoLocal, a.ac.Queue.NoWait, nil)
 	a.metaMessages <- m
 	return
 }
 
 // Pause listening for messages on the queue
-func (a AMQPReceiver) Pause() error {
+func (a *AMQPReceiver) Pause() error {
 	a.m.Lock()
 	defer a.m.Unlock()
 	if a.paused {
 		return nil
 	}
 	a.paused = true
-	return a.channel.Cancel(consumerTag+string(a.tagCount), false)
+	return a.Channel.Cancel(consumerTag+string(a.tagCount), false)
 }
 
 // AMQPSender sends delayd entries over amqp after their timeout
 type AMQPSender struct {
-	AMQPDialer
+	AMQP
 
 	C chan<- EntryWrapper
 }
 
-// NewAMQPSender creates a new AMQPSender connected to the given AMQP URL.
+// NewAMQPSender creates a new Sender connected to the given  URL.
 func NewAMQPSender(amqpURL string) (sender *AMQPSender, err error) {
 	sender = new(AMQPSender)
 
@@ -233,9 +225,9 @@ func NewAMQPSender(amqpURL string) (sender *AMQPSender, err error) {
 	return
 }
 
-// Send sends a delayd entry over AMQP, using the entry's Target as the publish
+// Send sends a delayd entry over , using the entry's Target as the publish
 // exchange.
-func (s AMQPSender) Send(e Entry) (err error) {
+func (s *AMQPSender) Send(e Entry) (err error) {
 	msg := amqp.Publishing{
 		DeliveryMode:    amqp.Persistent,
 		Timestamp:       time.Now(),
@@ -245,6 +237,6 @@ func (s AMQPSender) Send(e Entry) (err error) {
 		Body:            e.Body,
 	}
 
-	err = s.channel.Publish(e.Target, "", true, false, msg)
+	err = s.Channel.Publish(e.Target, "", true, false, msg)
 	return
 }

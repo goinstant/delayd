@@ -5,7 +5,10 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/BurntSushi/toml"
 	"github.com/codegangsta/cli"
+
+	"github.com/nabeken/delayd"
 )
 
 // this is filled in at build time
@@ -36,16 +39,16 @@ func sigHandler(s stopable) {
 }
 
 func executeCli(c *cli.Context) {
-	Info("Starting delayd.Client")
+	delayd.Info("Starting delayd.Client")
 
 	config, err := loadConfig(c)
 	if err != nil {
-		Fatal("Unable to read config file: ", err)
+		delayd.Fatal("Unable to read config file: ", err)
 	}
 
 	cli, err := NewClient(c)
 	if err != nil {
-		Fatal("error creating client")
+		delayd.Fatal("error creating client")
 	}
 
 	sigHandler(cli)
@@ -55,14 +58,14 @@ func executeCli(c *cli.Context) {
 }
 
 func execute(c *cli.Context) {
-	Info("Starting delayd")
+	delayd.Info("Starting delayd")
 
 	config, err := loadConfig(c)
 	if err != nil {
-		Fatal("Unable to read config file: ", err)
+		delayd.Fatal("Unable to read config file: ", err)
 	}
 
-	s := Server{}
+	s := delayd.Server{}
 	sigHandler(&s)
 	s.Run(config)
 }
@@ -117,4 +120,12 @@ func main() {
 	}
 
 	app.Run(os.Args)
+}
+
+// loadConfig load's delayd's toml configuration, based on the command-line
+// provided location, or the default (/etc/delayd.toml)
+func loadConfig(c Context) (config delayd.Config, err error) {
+	_, err = toml.DecodeFile(c.String("config"), &config)
+
+	return
 }

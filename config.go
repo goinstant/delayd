@@ -1,8 +1,4 @@
-package main
-
-import (
-	"github.com/BurntSushi/toml"
-)
+package delayd
 
 // AMQPQueue holds configuration for the queue used by the AMQPReceiver
 type AMQPQueue struct {
@@ -48,12 +44,4 @@ type Config struct {
 	DataDir string     `toml:"data_dir"`
 	LogDir  string     `toml:"log_dir"`
 	Raft    RaftConfig
-}
-
-// loadConfig load's delayd's toml configuration, based on the command-line
-// provided location, or the default (/etc/delayd.toml)
-func loadConfig(c Context) (config Config, err error) {
-	_, err = toml.DecodeFile(c.String("config"), &config)
-
-	return
 }

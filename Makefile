@@ -54,6 +54,7 @@ config:
 	else \
 	  cp delayd.toml.sample delayd.toml; \
 	fi
+	cp delayd.toml cmd/delayd/delayd.toml
 
 cover:
 	go test -cover ./...

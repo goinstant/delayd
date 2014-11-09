@@ -1,4 +1,4 @@
-package main
+package delayd
 
 import (
 	"log"
@@ -73,7 +73,7 @@ func (s *Server) Run(c Config) {
 		entry := eWrapper.Entry
 		// XXX cleanup needed here before exit
 		if !ok {
-			Fatal("Receiver Consumption failed!")
+			//Fatal("Receiver Consumption failed!")
 		}
 
 		Debug("Got entry: ", entry)

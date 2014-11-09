@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/nabeken/delayd"
 )
 
 const (
@@ -22,9 +24,9 @@ func (m MockClientContext) String(ask string) string {
 	case "key":
 		return "delayd-key"
 	case "file":
-		return "tests/in.toml"
+		return "testdata/in.toml"
 	case "out":
-		return "tests/out.txt"
+		return "testdata/out.txt"
 	case "config":
 		return "delayd.toml"
 	default:
@@ -84,7 +86,7 @@ func TestInAndOut(t *testing.T) {
 	assert.Nil(t, err)
 	defer os.Remove(conf.LogDir)
 
-	s := Server{}
+	s := delayd.Server{}
 	go s.Run(conf)
 
 	c, err := NewClient(m)
@@ -97,10 +99,10 @@ func TestInAndOut(t *testing.T) {
 	s.Stop()
 
 	// remove all whitespace for a more reliable compare
-	f1 := strings.Trim(getFileAsString("tests/expected.txt"), "\n ")
-	f2 := strings.Trim(getFileAsString("tests/out.txt"), "\n ")
+	f1 := strings.Trim(getFileAsString("testdata/expected.txt"), "\n ")
+	f2 := strings.Trim(getFileAsString("testdata/out.txt"), "\n ")
 
 	assert.Equal(t, f1, f2)
 
-	cleanup("tests/out.txt")
+	cleanup("testdata/out.txt")
 }

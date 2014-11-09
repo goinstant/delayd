@@ -6,7 +6,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/BurntSushi/toml"
 	"github.com/streadway/amqp"
+
+	"github.com/nabeken/delayd"
 )
 
 const (
@@ -15,12 +18,12 @@ const (
 	key
 )
 
-// Client is the delayd client.  It can relay messages to the server for easy
+// AMQPClient is the delayd client.  It can relay messages to the server for easy
 // testing
-type Client struct {
-	Shutdown
-	amqpDialer *AMQPDialer
+type AMQPClient struct {
+	AMQP *delayd.AMQP
 
+	shutdown       chan bool
 	exchange       string
 	key            string
 	file           string
@@ -30,14 +33,13 @@ type Client struct {
 	outFileDefined bool
 	noWait         bool
 	lock           sync.WaitGroup
-
-	stdin chan ClientMessages
+	stdin          chan delayd.ClientMessages
 }
 
 // NewClient creates and returns a Client instance
-func NewClient(c Context) (cli *Client, err error) {
+func NewClient(c Context) (cli *AMQPClient, err error) {
 
-	cli = new(Client)
+	cli = new(AMQPClient)
 	cli.exchange = c.String("exchange")
 	cli.key = c.String("key")
 	cli.repl = c.Bool("repl")
@@ -48,15 +50,15 @@ func NewClient(c Context) (cli *Client, err error) {
 	cli.shutdown = make(chan bool)
 	cli.noWait = c.Bool("no-wait")
 
-	cli.stdin = make(chan ClientMessages)
+	cli.stdin = make(chan delayd.ClientMessages)
 
 	return cli, nil
 }
 
-func (c *Client) send(cliMessages ClientMessages, conf Config, params ...int) error {
+func (c *AMQPClient) send(msgs delayd.ClientMessages, conf delayd.Config, params ...int) error {
 
-	for _, msg := range cliMessages.Message {
-		Debug("SENDING:", msg.Value)
+	for _, msg := range msgs.Message {
+		delayd.Debug("SENDING:", msg.Value)
 
 		pub := amqp.Publishing{
 			DeliveryMode: amqp.Persistent,
@@ -72,7 +74,7 @@ func (c *Client) send(cliMessages ClientMessages, conf Config, params ...int) er
 
 		exchange := conf.AMQP.Exchange.Name
 		queue := conf.AMQP.Queue.Name
-		err := c.amqpDialer.channel.Publish(exchange, queue, true, false, pub)
+		err := c.AMQP.Channel.Publish(exchange, queue, true, false, pub)
 		if err != nil {
 			return err
 		}
@@ -80,23 +82,23 @@ func (c *Client) send(cliMessages ClientMessages, conf Config, params ...int) er
 		c.lock.Add(1)
 	}
 
-	Debug("ALL MESSAGES SENT")
+	delayd.Debug("ALL MESSAGES SENT")
 
 	return nil
 }
 
-func (c *Client) listenInput() {
+func (c *AMQPClient) listenInput() {
 	if c.repl {
-		Info("Waiting for STDIN")
+		delayd.Info("Waiting for STDIN")
 		bio := bufio.NewReader(os.Stdin)
 		for {
 			line, err := bio.ReadBytes('\n')
 			if err != nil {
-				Fatal("Error reading from STDIN")
+				delayd.Fatal("Error reading from STDIN")
 			}
 
-			cliMessages := ClientMessages{
-				Message: []Message{
+			cliMessages := delayd.ClientMessages{
+				Message: []delayd.Message{
 					{
 						Value: string(line[:]),
 						Key:   c.key,
@@ -111,14 +113,14 @@ func (c *Client) listenInput() {
 
 	cliMessages, err := loadMessages(c.file)
 	if err != nil {
-		Fatalf("Error reading from file: %s, got error: %s", c.file, err)
+		delayd.Fatalf("Error reading from file: %s, got error: %s", c.file, err)
 	}
 
 	c.stdin <- cliMessages
 	c.shutdown <- true
 }
 
-func (c *Client) listenResponse(messages <-chan amqp.Delivery) {
+func (c *AMQPClient) listenResponse(messages <-chan amqp.Delivery) {
 	for {
 		// XXX -- It might be worth putting in a shutdown message here in the
 		// future, but likely the client will not need to be fail-proof.
@@ -136,9 +138,9 @@ func (c *Client) listenResponse(messages <-chan amqp.Delivery) {
 				panic(err)
 			}
 
-			Info("Wrote response to", c.outFile)
+			delayd.Info("Wrote response to", c.outFile)
 		} else {
-			Info("MSG RECEIVED:", string(msg.Body[:]))
+			delayd.Info("MSG RECEIVED:", string(msg.Body[:]))
 		}
 
 		defer func() {
@@ -154,42 +156,31 @@ func (c *Client) listenResponse(messages <-chan amqp.Delivery) {
 
 // Run is called to set up amqp options and then relay messages to the server
 // over AMQP.
-func (c *Client) Run(conf Config) error {
-	amqpDialer := new(AMQPDialer)
-
-	conn, err := amqp.Dial(conf.AMQP.URL)
-	if err != nil {
-		Fatal("Unable to dial AMQP:", err)
+func (c *AMQPClient) Run(conf delayd.Config) error {
+	c.AMQP = &delayd.AMQP{}
+	if err := c.AMQP.Dial(conf.AMQP.URL); err != nil {
+		delayd.Fatal("Unable to dial AMQP:", err)
 	}
-
-	amqpDialer.connection = conn
-	ch, err := amqpDialer.connection.Channel()
-	if err != nil {
-		Fatal("Unable to create amqp channel:", err)
-	}
-
-	amqpDialer.channel = ch
-	c.amqpDialer = amqpDialer
 
 	exch := conf.AMQP.Exchange
-	Debug("declaring exchange:", c.exchange)
-	err = ch.ExchangeDeclare(c.exchange, exch.Kind, exch.Durable, exch.AutoDelete, exch.Internal, exch.NoWait, nil)
+	delayd.Debug("declaring exchange:", c.exchange)
+	err := c.AMQP.Channel.ExchangeDeclare(c.exchange, exch.Kind, exch.Durable, exch.AutoDelete, exch.Internal, exch.NoWait, nil)
 	if err != nil {
-		Fatal("Unable to declare exchange:", err)
+		delayd.Fatal("Unable to declare exchange:", err)
 	}
 
 	q := conf.AMQP.Queue
-	queue, err := ch.QueueDeclare("", q.Durable, q.AutoDelete, q.Exclusive, q.NoWait, nil)
+	queue, err := c.AMQP.Channel.QueueDeclare("", q.Durable, q.AutoDelete, q.Exclusive, q.NoWait, nil)
 	if err != nil {
-		Fatal("Unable to declare queue:", err)
+		delayd.Fatal("Unable to declare queue:", err)
 	}
 
-	err = ch.QueueBind(queue.Name, "", c.exchange, q.NoWait, nil)
+	err = c.AMQP.Channel.QueueBind(queue.Name, "", c.exchange, q.NoWait, nil)
 	if err != nil {
-		Fatal("Unable to bind queue to exchange:", err)
+		delayd.Fatal("Unable to bind queue to exchange:", err)
 	}
 
-	messages, err := ch.Consume(queue.Name, "delayd", true, q.Exclusive, q.NoLocal, q.NoLocal, nil)
+	messages, err := c.AMQP.Channel.Consume(queue.Name, "delayd", true, q.Exclusive, q.NoLocal, q.NoLocal, nil)
 
 	go c.listenInput()
 	go c.listenResponse(messages)
@@ -202,16 +193,16 @@ func (c *Client) Run(conf Config) error {
 			err := c.send(msg, conf)
 
 			if err != nil {
-				Warn("Got Err:", err)
+				delayd.Warn("Got Err:", err)
 			}
 		}
 	}
 }
 
 // Stop is resonsible for shutting down all services used by the Client
-func (c *Client) Stop() {
-	Info("Shutting down gracefully")
-	Info("waiting for AMQP responses to arrive")
+func (c *AMQPClient) Stop() {
+	delayd.Info("Shutting down gracefully")
+	delayd.Info("waiting for AMQP responses to arrive")
 
 	// this is a double negative which sucks, but it makes more sense from the cli
 	// point of view to specifiy --no-wait when you don't want to wait, rather than
@@ -220,5 +211,11 @@ func (c *Client) Stop() {
 		c.lock.Wait()
 	}
 
-	c.amqpDialer.Close()
+	c.AMQP.Close()
+}
+
+func loadMessages(path string) (config delayd.ClientMessages, err error) {
+	delayd.Debug("reading", path)
+	_, err = toml.DecodeFile(path, &config)
+	return config, err
 }
