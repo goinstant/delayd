@@ -1,6 +1,6 @@
 # Delayd
 
-[![Build Status](https://travis-ci.org/goinstant/delayd.svg?branch=master)](https://travis-ci.org/goinstant/delayd)
+[![Build Status](https://travis-ci.org/nabeken/delayd.svg?branch=master)](https://travis-ci.org/goinstant/delayd)
 [![BSD License](http://img.shields.io/badge/license-BSD-blue.svg)](https://github.com/goinstant/delayd/blob/master/LICENSE)
 
 Delayd is an available `setTimeout()` service for scheduling message sends.
