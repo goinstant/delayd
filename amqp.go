@@ -165,9 +165,11 @@ func NewAMQPReceiver(ac AMQPConfig) (receiver *AMQPReceiver, err error) {
 				}
 
 				// optional headers that will be relayed
-				entry.ContentType = msg.ContentType
-				entry.ContentEncoding = msg.ContentEncoding
-				entry.CorrelationID = msg.CorrelationId
+				entry.AMQP = &AMQPMessage{
+					ContentType:     msg.ContentType,
+					ContentEncoding: msg.ContentEncoding,
+					CorrelationID:   msg.CorrelationId,
+				}
 
 				entry.Body = msg.Body
 				eWrapper.Entry = entry
@@ -231,9 +233,9 @@ func (s *AMQPSender) Send(e Entry) (err error) {
 	msg := amqp.Publishing{
 		DeliveryMode:    amqp.Persistent,
 		Timestamp:       time.Now(),
-		ContentType:     e.ContentType,
-		ContentEncoding: e.ContentEncoding,
-		CorrelationId:   e.CorrelationID,
+		ContentType:     e.AMQP.ContentType,
+		ContentEncoding: e.AMQP.ContentEncoding,
+		CorrelationId:   e.AMQP.CorrelationID,
 		Body:            e.Body,
 	}
 

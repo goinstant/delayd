@@ -50,7 +50,12 @@ type Entry struct {
 	// Optional
 	Key string
 
-	// XXX amqp specific
+	// AMQP specific message
+	AMQP *AMQPMessage
+}
+
+// AMQPMessage represents AMQP specific message.
+type AMQPMessage struct {
 	ContentEncoding string
 	ContentType     string
 	CorrelationID   string
