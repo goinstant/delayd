@@ -68,7 +68,7 @@ func (s *Server) Run(c Config) {
 	go s.observeNextTime()
 
 	for {
-		msg, ok := <-s.receiver.C
+		msg, ok := <-s.receiver.MessageCh()
 		entry := msg.Entry
 		// XXX cleanup needed here before exit
 		if !ok {

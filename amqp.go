@@ -42,10 +42,11 @@ func (a *AMQP) Dial(url string) error {
 // AMQPReceiver receives delayd commands over amqp
 type AMQPReceiver struct {
 	AMQP
-	C <-chan Message
 
+	c            chan Message
 	shutdown     chan bool
 	metaMessages chan (<-chan amqp.Delivery)
+	messages     chan amqp.Delivery
 	paused       bool
 	tagCount     uint
 	ac           AMQPConfig
@@ -56,28 +57,45 @@ type AMQPReceiver struct {
 // and starts it listening for commands.
 func NewAMQPReceiver(ac AMQPConfig) (*AMQPReceiver, error) {
 	receiver := &AMQPReceiver{
-		ac:     ac,
-		paused: true,
+		c: make(chan Message),
+
+		messages:     make(chan amqp.Delivery, ac.Qos),
+		metaMessages: make(chan (<-chan amqp.Delivery)),
+		ac:           ac,
+		paused:       true,
+		shutdown:     make(chan bool),
 	}
 
-	err := receiver.Dial(ac.URL)
-	if err != nil {
+	if err := receiver.Dial(ac.URL); err != nil {
 		return nil, err
 	}
 
 	Debug("Setting channel QoS to", ac.Qos)
-	err = receiver.Channel.Qos(ac.Qos, 0, false)
-	if err != nil {
+	if err := receiver.Channel.Qos(ac.Qos, 0, false); err != nil {
 		return nil, err
 	}
 
-	err = receiver.Channel.ExchangeDeclare(ac.Exchange.Name, ac.Exchange.Kind, ac.Exchange.Durable, ac.Exchange.AutoDelete, ac.Exchange.Internal, ac.Exchange.NoWait, nil)
-	if err != nil {
+	if err := receiver.Channel.ExchangeDeclare(
+		ac.Exchange.Name,
+		ac.Exchange.Kind,
+		ac.Exchange.Durable,
+		ac.Exchange.AutoDelete,
+		ac.Exchange.Internal,
+		ac.Exchange.NoWait,
+		nil,
+	); err != nil {
 		Error("Could not declare  Exchange: ", err)
 		return nil, err
 	}
 
-	queue, err := receiver.Channel.QueueDeclare(ac.Queue.Name, ac.Queue.Durable, ac.Queue.AutoDelete, ac.Queue.Exclusive, ac.Queue.NoWait, nil)
+	queue, err := receiver.Channel.QueueDeclare(
+		ac.Queue.Name,
+		ac.Queue.Durable,
+		ac.Queue.AutoDelete,
+		ac.Queue.Exclusive,
+		ac.Queue.NoWait,
+		nil,
+	)
 	if err != nil {
 		Error("Could not declare  Queue: ", err)
 		return nil, err
@@ -85,96 +103,100 @@ func NewAMQPReceiver(ac AMQPConfig) (*AMQPReceiver, error) {
 
 	for _, exch := range ac.Queue.Bind {
 		Debugf("Binding queue %s to exchange %s", queue.Name, exch)
-		err = receiver.Channel.QueueBind(queue.Name, "delayd", exch, ac.Queue.NoWait, nil)
-		if err != nil {
+		if err := receiver.Channel.QueueBind(queue.Name, "delayd", exch, ac.Queue.NoWait, nil); err != nil {
 			// XXX un-fatal this like the other errors
 			Fatalf("Error binding queue %s to Exchange %s", queue.Name, exch)
 		}
 	}
 
-	c := make(chan Message)
-	receiver.C = c
-	receiver.shutdown = make(chan bool)
-
-	// messages is a proxy that wraps the 'real' channel, which will be closed
-	// and opened on pause/resume
-	messages := make(chan amqp.Delivery, ac.Qos)
-	receiver.metaMessages = make(chan (<-chan amqp.Delivery))
-	go func() {
-		var realMessages <-chan amqp.Delivery
-		for {
-			select {
-			case m := <-receiver.metaMessages:
-				// we have a new source of 'real' messages. swap it in.
-				Debug("Installing new amqp channel")
-				realMessages = m
-			case msg, ok := <-realMessages:
-				// Don't propagate any channel close messages
-				if ok {
-					messages <- msg
-				}
-			}
-		}
-	}()
-
-	go func() {
-		for {
-			select {
-			case <-receiver.shutdown:
-				Debug("received signal to quit reading amqp, exiting goroutine")
-				return
-			case delivery := <-messages:
-				deliverer := &AMQPDeliverer{Delivery: delivery}
-
-				var delay int64
-				switch val := delivery.Headers["delayd-delay"].(type) {
-				case int32:
-					delay = int64(val)
-				case int64:
-					delay = val
-				default:
-					Warn(delivery)
-					Warn("Bad/missing delay. discarding message")
-					deliverer.Ack()
-				}
-
-				entry := Entry{
-					SendAt: time.Now().Add(time.Duration(delay) * time.Millisecond),
-				}
-
-				target, found := delivery.Headers["delayd-target"].(string)
-				if !found {
-					Warn("Bad/missing target. discarding message")
-					deliverer.Ack()
-					continue
-				}
-				entry.Target = target
-
-				// optional key value for overwrite
-				if k, ok := delivery.Headers["delayd-key"].(string); ok {
-					entry.Key = k
-				}
-
-				// optional headers that will be relayed
-				entry.AMQP = &AMQPMessage{
-					ContentType:     delivery.ContentType,
-					ContentEncoding: delivery.ContentEncoding,
-					CorrelationID:   delivery.CorrelationId,
-				}
-
-				entry.Body = delivery.Body
-				msg := Message{
-					Entry: entry,
-					MessageDeliverer: &AMQPDeliverer{
-						Delivery: delivery,
-					},
-				}
-				c <- msg
-			}
-		}
-	}()
+	go receiver.monitorChannel()
+	go receiver.messageLoop()
 
 	return receiver, nil
+}
+
+// monitorChannel monitors metaMessages channel.
+// It installs new channel when metaMessages channel returns a channel
+func (a *AMQPReceiver) monitorChannel() {
+	var realMessages <-chan amqp.Delivery
+	for {
+		select {
+		case <-a.shutdown:
+			Debug("received signal to quit reading amqp, exiting goroutine")
+			return
+		case m := <-a.metaMessages:
+			// we have a new source of 'real' messages. swap it in.
+			Debug("Installing new amqp channel")
+			realMessages = m
+		case msg, ok := <-realMessages:
+			// Don't propagate any channel close messages
+			if ok {
+				a.messages <- msg
+			}
+		}
+	}
+}
+
+func (a *AMQPReceiver) messageLoop() {
+	for {
+		select {
+		case <-a.shutdown:
+			Debug("received signal to quit reading amqp, exiting goroutine")
+			return
+		case delivery := <-a.messages:
+			deliverer := &AMQPDeliverer{Delivery: delivery}
+
+			var delay int64
+			switch val := delivery.Headers["delayd-delay"].(type) {
+			case int32:
+				delay = int64(val)
+			case int64:
+				delay = val
+			default:
+				Warn(delivery)
+				Warn("Bad/missing delay. discarding message")
+				deliverer.Ack()
+			}
+
+			entry := Entry{
+				SendAt: time.Now().Add(time.Duration(delay) * time.Millisecond),
+			}
+
+			target, found := delivery.Headers["delayd-target"].(string)
+			if !found {
+				Warn("Bad/missing target. discarding message")
+				deliverer.Ack()
+				continue
+			}
+			entry.Target = target
+
+			// optional key value for overwrite
+			if k, ok := delivery.Headers["delayd-key"].(string); ok {
+				entry.Key = k
+			}
+
+			// optional headers that will be relayed
+			entry.AMQP = &AMQPMessage{
+				ContentType:     delivery.ContentType,
+				ContentEncoding: delivery.ContentEncoding,
+				CorrelationID:   delivery.CorrelationId,
+			}
+
+			entry.Body = delivery.Body
+			msg := Message{
+				Entry: entry,
+				MessageDeliverer: &AMQPDeliverer{
+					Delivery: delivery,
+				},
+			}
+			a.c <- msg
+		}
+	}
+}
+
+// MessageCh returns a receiving-only channel returns Message
+func (a *AMQPReceiver) MessageCh() <-chan Message {
+	return a.c
 }
 
 // Close pauses the receiver and signals the shutdown channel.
@@ -194,8 +216,6 @@ func (a *AMQPReceiver) Start() error {
 		return nil
 	}
 
-	a.paused = false
-	a.tagCount++
 	m, err := a.Channel.Consume(
 		a.ac.Queue.Name,
 		consumerTag+string(a.tagCount),
@@ -205,6 +225,14 @@ func (a *AMQPReceiver) Start() error {
 		a.ac.Queue.NoWait,
 		nil,
 	)
+	if err != nil {
+		return err
+	}
+
+	a.paused = false
+	a.tagCount++
+
+	// Install new channel
 	a.metaMessages <- m
 	return err
 }
