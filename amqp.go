@@ -23,20 +23,20 @@ func (a *AMQP) Close() {
 }
 
 // Dial connects to , and open a communication channel.
-func (a *AMQP) Dial(url string) (err error) {
-	a.Connection, err = amqp.Dial(url)
+func (a *AMQP) Dial(url string) error {
+	conn, err := amqp.Dial(url)
 	if err != nil {
 		Error("Could not connect to : ", err)
-		return
+		return err
 	}
 
-	a.Channel, err = a.Connection.Channel()
+	ch, err := conn.Channel()
 	if err != nil {
 		Error("Could not open  channel: ", err)
-		return
+		return err
 	}
-
-	return
+	a.Connection, a.Channel = conn, ch
+	return nil
 }
 
 // AMQPReceiver receives delayd commands over amqp
@@ -62,34 +62,35 @@ func (a *AMQPReceiver) Close() {
 
 // NewAMQPReceiver creates a new Receiver based on the provided Config,
 // and starts it listening for commands.
-func NewAMQPReceiver(ac AMQPConfig) (receiver *AMQPReceiver, err error) {
-	receiver = new(AMQPReceiver)
-	receiver.ac = ac
-	receiver.paused = true
-	receiver.tagCount = 0
-	receiver.m = new(sync.Mutex)
+func NewAMQPReceiver(ac AMQPConfig) (*AMQPReceiver, error) {
+	receiver := &AMQPReceiver{
+		ac:       ac,
+		paused:   true,
+		tagCount: 0,
+		m:        &sync.Mutex{},
+	}
 
-	err = receiver.Dial(ac.URL)
+	err := receiver.Dial(ac.URL)
 	if err != nil {
-		return
+		return nil, err
 	}
 
 	Debug("Setting channel QoS to", ac.Qos)
 	err = receiver.Channel.Qos(ac.Qos, 0, false)
 	if err != nil {
-		return
+		return nil, err
 	}
 
 	err = receiver.Channel.ExchangeDeclare(ac.Exchange.Name, ac.Exchange.Kind, ac.Exchange.Durable, ac.Exchange.AutoDelete, ac.Exchange.Internal, ac.Exchange.NoWait, nil)
 	if err != nil {
 		Error("Could not declare  Exchange: ", err)
-		return
+		return nil, err
 	}
 
 	queue, err := receiver.Channel.QueueDeclare(ac.Queue.Name, ac.Queue.Durable, ac.Queue.AutoDelete, ac.Queue.Exclusive, ac.Queue.NoWait, nil)
 	if err != nil {
 		Error("Could not declare  Queue: ", err)
-		return
+		return nil, err
 	}
 
 	for _, exch := range ac.Queue.Bind {
@@ -183,22 +184,23 @@ func NewAMQPReceiver(ac AMQPConfig) (receiver *AMQPReceiver, err error) {
 		}
 	}()
 
-	return
+	return receiver, nil
 }
 
 // Start or restart listening for messages on the queue
-func (a *AMQPReceiver) Start() (err error) {
+func (a *AMQPReceiver) Start() error {
 	a.m.Lock()
 	defer a.m.Unlock()
 	if !a.paused {
-		return
+		// FIXME: already started?
+		return nil
 	}
 
 	a.paused = false
 	a.tagCount++
 	m, err := a.Channel.Consume(a.ac.Queue.Name, consumerTag+string(a.tagCount), a.ac.Queue.AutoAck, a.ac.Queue.Exclusive, a.ac.Queue.NoLocal, a.ac.Queue.NoWait, nil)
 	a.metaMessages <- m
-	return
+	return err
 }
 
 // Pause listening for messages on the queue
@@ -220,20 +222,19 @@ type AMQPSender struct {
 }
 
 // NewAMQPSender creates a new Sender connected to the given  URL.
-func NewAMQPSender(amqpURL string) (sender *AMQPSender, err error) {
-	sender = new(AMQPSender)
-
-	err = sender.Dial(amqpURL)
+func NewAMQPSender(amqpURL string) (*AMQPSender, error) {
+	sender := &AMQPSender{}
+	err := sender.Dial(amqpURL)
 	if err != nil {
-		return
+		return nil, err
 	}
 
-	return
+	return sender, nil
 }
 
 // Send sends a delayd entry over , using the entry's Target as the publish
 // exchange.
-func (s *AMQPSender) Send(e Entry) (err error) {
+func (s *AMQPSender) Send(e Entry) error {
 	msg := amqp.Publishing{
 		DeliveryMode:    amqp.Persistent,
 		Timestamp:       time.Now(),
@@ -242,7 +243,5 @@ func (s *AMQPSender) Send(e Entry) (err error) {
 		CorrelationId:   e.AMQP.CorrelationID,
 		Body:            e.Body,
 	}
-
-	err = s.Channel.Publish(e.Target, "", true, false, msg)
-	return
+	return s.Channel.Publish(e.Target, "", true, false, msg)
 }

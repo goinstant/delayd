@@ -86,7 +86,7 @@ func TestInAndOut(t *testing.T) {
 	assert.Nil(t, err)
 	defer os.Remove(conf.LogDir)
 
-	s := delayd.Server{}
+	s := &delayd.Server{}
 	go s.Run(conf)
 
 	c, err := NewClient(m)

@@ -27,7 +27,7 @@ type Server struct {
 // Run initializes the Server from a Config, and begins its main loop.
 func (s *Server) Run(c Config) {
 	s.leader = false
-	s.m = new(sync.Mutex)
+	s.m = &sync.Mutex{}
 	s.shutdownCh = make(chan bool)
 
 	if len(c.LogDir) != 0 {

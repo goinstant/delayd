@@ -37,22 +37,18 @@ type AMQPClient struct {
 }
 
 // NewClient creates and returns a Client instance
-func NewClient(c Context) (cli *AMQPClient, err error) {
-
-	cli = new(AMQPClient)
-	cli.exchange = c.String("exchange")
-	cli.key = c.String("key")
-	cli.repl = c.Bool("repl")
-	cli.delay = int64(c.Int("delay"))
-	cli.file = c.String("file")
-	cli.outFile = c.String("out")
-	cli.outFileDefined = cli.outFile != ""
-	cli.shutdown = make(chan bool)
-	cli.noWait = c.Bool("no-wait")
-
-	cli.stdin = make(chan ClientMessages)
-
-	return cli, nil
+func NewClient(c Context) (*AMQPClient, error) {
+	return &AMQPClient{
+		exchange: c.String("exchange"),
+		key:      c.String("key"),
+		repl:     c.Bool("repl"),
+		delay:    int64(c.Int("delay")),
+		file:     c.String("file"),
+		outFile:  c.String("out"),
+		shutdown: make(chan bool),
+		noWait:   c.Bool("no-wait"),
+		stdin:    make(chan ClientMessages),
+	}, nil
 }
 
 func (c *AMQPClient) send(msgs ClientMessages, conf delayd.Config, params ...int) error {
@@ -125,7 +121,7 @@ func (c *AMQPClient) listenResponse(messages <-chan amqp.Delivery) {
 		// XXX -- It might be worth putting in a shutdown message here in the
 		// future, but likely the client will not need to be fail-proof.
 		msg := <-messages
-		if c.outFileDefined {
+		if c.outFile != "" {
 			f, err := os.OpenFile(c.outFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 			if err != nil {
 				panic(err)

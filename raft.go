@@ -196,16 +196,15 @@ type Raft struct {
 }
 
 // NewRaft creates a new Raft instance. raft data is stored under the raft dir in prefix.
-func NewRaft(c RaftConfig, prefix string, logDir string) (r *Raft, err error) {
-	r = new(Raft)
+func NewRaft(c RaftConfig, prefix string, logDir string) (*Raft, error) {
+	r := &Raft{}
 
 	config := raft.DefaultConfig()
 	config.EnableSingleNode = c.Single
 
-	var logOutput *os.File
 	if logDir != "\n" {
 		logFile := path.Join(logDir, "raft.log")
-		logOutput, err = os.OpenFile(logFile, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0666)
+		logOutput, err := os.OpenFile(logFile, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0666)
 		if err != nil {
 			Fatal("Could not open raft log file: ", err)
 		}
@@ -214,15 +213,14 @@ func NewRaft(c RaftConfig, prefix string, logDir string) (r *Raft, err error) {
 	}
 
 	raftDir := path.Join(prefix, "raft")
-	err = os.MkdirAll(raftDir, 0755)
-	if err != nil {
+	if err := os.MkdirAll(raftDir, 0755); err != nil {
 		Fatal("Could not create raft storage dir: ", err)
 	}
 
 	fss, err := raft.NewFileSnapshotStore(raftDir, 1, nil)
 	if err != nil {
 		Error("Could not initialize raft snapshot store: ", err)
-		return
+		return nil, err
 	}
 
 	// this should be our externally visible address. If not provided in the
@@ -234,13 +232,13 @@ func NewRaft(c RaftConfig, prefix string, logDir string) (r *Raft, err error) {
 	a, err := net.ResolveTCPAddr("tcp", *c.Advertise)
 	if err != nil {
 		Error("Could not lookup raft advertise address: ", err)
-		return
+		return nil, err
 	}
 
 	r.transport, err = raft.NewTCPTransport(c.Listen, a, 3, 10*time.Second, nil)
 	if err != nil {
 		Error("Could not create raft transport: ", err)
-		return
+		return nil, err
 	}
 
 	peerStore := raft.NewJSONPeers(raftDir, r.transport)
@@ -249,7 +247,7 @@ func NewRaft(c RaftConfig, prefix string, logDir string) (r *Raft, err error) {
 		var peers []net.Addr
 		peers, err = peerStore.Peers()
 		if err != nil {
-			return
+			return nil, err
 		}
 
 		for _, peerStr := range c.Peers {
@@ -269,23 +267,23 @@ func NewRaft(c RaftConfig, prefix string, logDir string) (r *Raft, err error) {
 	r.mdb, err = raftmdb.NewMDBStore(raftDir)
 	if err != nil {
 		Error("Could not create raft store:", err)
-		return
+		return nil, err
 	}
 
 	storage, err := NewStorage()
 	if err != nil {
 		Error("Could not create storage:", err)
-		return
+		return nil, err
 	}
 	r.fsm = &FSM{storage}
 
 	r.raft, err = raft.NewRaft(config, r.fsm, r.mdb, r.mdb, fss, peerStore, r.transport)
 	if err != nil {
 		Error("Could not initialize raft: ", err)
-		return
+		return nil, err
 	}
 
-	return
+	return r, nil
 }
 
 // Close cleanly shutsdown the raft instance.

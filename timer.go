@@ -22,20 +22,19 @@ type Timer struct {
 }
 
 // NewTimer creates a new timer instance, and starts its main loop
-func NewTimer(sendFunc SendFunc) (t *Timer) {
-	t = new(Timer)
-
-	t.timerRunning = false
-	t.timer = time.NewTimer(twentyFourHours)
-	t.nextSend = time.Now().Add(twentyFourHours)
-	t.m = new(sync.Mutex)
-
-	t.sendFunc = sendFunc
-	t.shutdown = make(chan bool)
+func NewTimer(sendFunc SendFunc) *Timer {
+	t := &Timer{
+		timerRunning: false,
+		timer:        time.NewTimer(twentyFourHours),
+		nextSend:     time.Now().Add(twentyFourHours),
+		m:            &sync.Mutex{},
+		sendFunc:     sendFunc,
+		shutdown:     make(chan bool),
+	}
 
 	go t.timerLoop()
 
-	return
+	return t
 }
 
 // Stop gracefully stops the timer, ensuring any running processing is complete.
