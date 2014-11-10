@@ -1,11 +1,17 @@
 package main
 
 import (
+	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/BurntSushi/toml"
+	"github.com/streadway/amqp"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/nabeken/delayd"
@@ -19,7 +25,7 @@ type MockClientContext struct{}
 
 func (m MockClientContext) String(ask string) string {
 	switch ask {
-	case "exchange":
+	case "target":
 		return "delayd-test"
 	case "key":
 		return "delayd-key"
@@ -29,29 +35,22 @@ func (m MockClientContext) String(ask string) string {
 		return "testdata/out.txt"
 	case "config":
 		return "delayd.toml"
-	default:
-		panic(unknownAsk + ask)
 	}
+
+	panic(unknownAsk + ask)
 }
 
 func (m MockClientContext) Bool(ask string) bool {
-	switch ask {
-	case "repl":
-		return false
-	case "no-wait":
-		return false
-	default:
-		panic(unknownAsk + ask)
-	}
+	panic(unknownAsk + ask)
 }
 
 func (m MockClientContext) Int(ask string) int {
 	switch ask {
 	case "delay":
 		return 50
-	default:
-		panic(unknownAsk + ask)
 	}
+
+	panic(unknownAsk + ask)
 }
 
 func getFileAsString(path string) string {
@@ -63,11 +62,128 @@ func getFileAsString(path string) string {
 	return string(dat[:])
 }
 
-func cleanup(path string) {
-	err := os.Remove(path)
+// TestAMQPClient is the delayd client.
+// It can relay messages to the server for easy testing.
+type TestAMQPClient struct {
+	*delayd.AMQP
+
+	deliveryCh <-chan amqp.Delivery
+	config     delayd.AMQPConfig
+	out        io.Writer
+}
+
+// NewClient creates and returns a Client instance
+func NewTestClient(config delayd.AMQPConfig, out io.Writer) (*TestAMQPClient, error) {
+	a, err := delayd.NewAMQP(config.URL)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
+
+	e := config.Exchange
+	if err := a.Channel.ExchangeDeclare(
+		e.Name,
+		e.Kind,
+		e.Durable,
+		e.AutoDelete,
+		e.Internal,
+		e.NoWait,
+		nil,
+	); err != nil {
+		return nil, err
+	}
+
+	q := config.Queue
+	queue, err := a.Channel.QueueDeclare("", q.Durable, q.AutoDelete, q.Exclusive, q.NoWait, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := a.Channel.QueueBind(queue.Name, "", e.Name, q.NoWait, nil); err != nil {
+		return nil, err
+	}
+
+	deliveryCh, err := a.Channel.Consume(
+		queue.Name,
+		"delayd", // consumer
+		true,     // autoAck
+		q.Exclusive,
+		q.NoLocal,
+		q.NoWait,
+		nil,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &TestAMQPClient{
+		AMQP: a,
+
+		config:     config,
+		deliveryCh: deliveryCh,
+		out:        out,
+	}, nil
+}
+
+func (c *TestAMQPClient) SendMessages(msgs []Message) error {
+	for _, msg := range msgs {
+		pm := amqp.Publishing{
+			DeliveryMode: amqp.Persistent,
+			Timestamp:    time.Now(),
+			ContentType:  "text/plain",
+			Headers: amqp.Table{
+				"delayd-delay":  msg.Delay,
+				"delayd-target": c.config.Exchange.Name,
+				"delayd-key":    msg.Key,
+			},
+			Body: []byte(msg.Value),
+		}
+		if err := c.Channel.Publish(
+			c.config.Exchange.Name,
+			c.config.Queue.Name,
+			true,  // mandatory
+			false, // immediate
+			pm,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// messageLoop processes messages reading from deliveryCh until quit is closed.
+// it also send a notification via done channel when processing is done.
+func (c *TestAMQPClient) RecvLoop(quit <-chan struct{}) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-quit:
+				delayd.Info("receiving quit. existing.")
+				return
+			case msg := <-c.deliveryCh:
+				fmt.Fprintf(c.out, "%s\n", msg.Body)
+				delayd.Infof("client: written %s", string(msg.Body))
+				done <- struct{}{}
+			}
+		}
+	}()
+	return done
+}
+
+func loadMessages(path string) (msgs []Message, err error) {
+	messages := struct {
+		Message []Message
+	}{}
+	delayd.Debug("reading", path)
+	_, err = toml.DecodeFile(path, &messages)
+	return messages.Message, err
+}
+
+// Message holds a message to send to delayd server
+type Message struct {
+	Value string
+	Key   string
+	Delay int64
 }
 
 func TestInAndOut(t *testing.T) {
@@ -75,34 +191,66 @@ func TestInAndOut(t *testing.T) {
 		t.Skip("Skipping test")
 	}
 
+	assert := assert.New(t)
+
 	m := MockClientContext{}
-	conf, err := loadConfig(m)
+	conf, err := loadConfig(m.String("config"))
 
 	// create an ephemeral location for data storage during tests
 	conf.DataDir, err = ioutil.TempDir("", "delayd-testint")
-	assert.Nil(t, err)
+	assert.NoError(err)
 	defer os.Remove(conf.DataDir)
+
 	conf.LogDir, err = ioutil.TempDir("", "delayd-testint-logs")
-	assert.Nil(t, err)
+	assert.NoError(err)
 	defer os.Remove(conf.LogDir)
 
 	s := &delayd.Server{}
 	go s.Run(conf)
+	defer s.Stop()
 
-	c, err := NewClient(m)
+	out, err := os.OpenFile(m.String("out"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
+	}
+	defer out.Close()
+
+	c, err := NewTestClient(conf.AMQP, out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	// Send messages to delayd exchange
+	msgs, err := loadMessages("testdata/in.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SendMessages(msgs); err != nil {
+		t.Fatal(err)
 	}
 
-	c.Run(conf)
-	c.Stop()
-	s.Stop()
+	quit := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(len(msgs))
+	go func() {
+		for _ = range c.RecvLoop(quit) {
+			wg.Done()
+		}
+	}()
+
+	// Wait for messages to be processed
+	wg.Wait()
+
+	// shutdown recvloop
+	close(quit)
 
 	// remove all whitespace for a more reliable compare
 	f1 := strings.Trim(getFileAsString("testdata/expected.txt"), "\n ")
 	f2 := strings.Trim(getFileAsString("testdata/out.txt"), "\n ")
 
-	assert.Equal(t, f1, f2)
-
-	cleanup("testdata/out.txt")
+	assert.Equal(f1, f2)
+	if err := os.Remove("testdata/out.txt"); err != nil {
+		t.Fatal(t)
+	}
 }

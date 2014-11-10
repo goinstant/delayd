@@ -12,6 +12,7 @@ import (
 
 // a generous 60 seconds to apply raft commands
 const raftMaxTime = time.Duration(60) * time.Second
+const routingKey = "delayd"
 
 // Server is the delayd server. It handles the server lifecycle (startup, clean shutdown)
 type Server struct {
@@ -26,7 +27,6 @@ type Server struct {
 
 // Run initializes the Server from a Config, and begins its main loop.
 func (s *Server) Run(c Config) {
-	s.leader = false
 	s.shutdownCh = make(chan bool)
 
 	if len(c.LogDir) != 0 {
@@ -48,7 +48,7 @@ func (s *Server) Run(c Config) {
 		Fatal("Error creating data dir: ", err)
 	}
 
-	s.receiver, err = NewAMQPReceiver(c.AMQP)
+	s.receiver, err = NewAMQPReceiver(c.AMQP, routingKey)
 	if err != nil {
 		Fatal("Could not initialize receiver: ", err)
 	}
@@ -68,11 +68,13 @@ func (s *Server) Run(c Config) {
 	go s.observeNextTime()
 
 	for {
+		Debug("server: start receiving MessageCh on", c.AMQP.Exchange.Name)
 		msg, ok := <-s.receiver.MessageCh()
 		entry := msg.Entry
 		// XXX cleanup needed here before exit
 		if !ok {
-			//Fatal("Receiver Consumption failed!")
+			Debug("Receiver Consumption failed!")
+			continue
 		}
 
 		Debug("Got entry: ", entry)
@@ -82,9 +84,9 @@ func (s *Server) Run(c Config) {
 			continue
 		}
 
-		err = s.raft.Add(b, raftMaxTime)
-		if err != nil {
+		if err := s.raft.Add(b, raftMaxTime); err != nil {
 			msg.Nack()
+			continue
 		}
 
 		msg.Ack()

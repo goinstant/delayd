@@ -2,15 +2,14 @@ package delayd
 
 // AMQPQueue holds configuration for the queue used by the AMQPReceiver
 type AMQPQueue struct {
-	Name string   `toml:"name"`
-	Bind []string `toml:"bind"`
-
-	Durable    bool `toml:"durable"`
-	AutoDelete bool `toml:"auto_delete"`
-	AutoAck    bool `toml:"auto_ack"`
-	Exclusive  bool `toml:"exclusive"`
-	NoLocal    bool `toml:"no_local"`
-	NoWait     bool `toml:"no_wait"`
+	Name       string   `toml:"name"`
+	Bind       []string `toml:"bind"`
+	Durable    bool     `toml:"durable"`
+	AutoDelete bool     `toml:"auto_delete"`
+	AutoAck    bool     `toml:"auto_ack"`
+	Exclusive  bool     `toml:"exclusive"`
+	NoLocal    bool     `toml:"no_local"`
+	NoWait     bool     `toml:"no_wait"`
 }
 
 // AMQPExchange holds configuration for the exchange used by the AMQPReceiver
