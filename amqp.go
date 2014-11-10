@@ -49,25 +49,15 @@ type AMQPReceiver struct {
 	paused       bool
 	tagCount     uint
 	ac           AMQPConfig
-	m            *sync.Mutex
-}
-
-// Close overwrites the base class close because we need to do some additional
-// work for the receiver (signalling the shutdown channel)
-func (a *AMQPReceiver) Close() {
-	a.Pause()
-	a.shutdown <- true
-	a.AMQP.Close()
+	mu           sync.Mutex
 }
 
 // NewAMQPReceiver creates a new Receiver based on the provided Config,
 // and starts it listening for commands.
 func NewAMQPReceiver(ac AMQPConfig) (*AMQPReceiver, error) {
 	receiver := &AMQPReceiver{
-		ac:       ac,
-		paused:   true,
-		tagCount: 0,
-		m:        &sync.Mutex{},
+		ac:     ac,
+		paused: true,
 	}
 
 	err := receiver.Dial(ac.URL)
@@ -187,10 +177,18 @@ func NewAMQPReceiver(ac AMQPConfig) (*AMQPReceiver, error) {
 	return receiver, nil
 }
 
+// Close pauses the receiver and signals the shutdown channel.
+// Finally, it closes AMQP the channel and connection.
+func (a *AMQPReceiver) Close() {
+	a.Pause()
+	a.shutdown <- true
+	a.AMQP.Close()
+}
+
 // Start or restart listening for messages on the queue
 func (a *AMQPReceiver) Start() error {
-	a.m.Lock()
-	defer a.m.Unlock()
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	if !a.paused {
 		// FIXME: already started?
 		return nil
@@ -213,8 +211,8 @@ func (a *AMQPReceiver) Start() error {
 
 // Pause listening for messages on the queue
 func (a *AMQPReceiver) Pause() error {
-	a.m.Lock()
-	defer a.m.Unlock()
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	if a.paused {
 		return nil
 	}

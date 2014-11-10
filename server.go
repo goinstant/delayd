@@ -21,13 +21,12 @@ type Server struct {
 	timer      *Timer
 	shutdownCh chan bool
 	leader     bool
-	m          *sync.Mutex
+	mu         sync.Mutex
 }
 
 // Run initializes the Server from a Config, and begins its main loop.
 func (s *Server) Run(c Config) {
 	s.leader = false
-	s.m = &sync.Mutex{}
 	s.shutdownCh = make(chan bool)
 
 	if len(c.LogDir) != 0 {
@@ -124,9 +123,9 @@ func (s *Server) resetTimer() {
 // and react accordingly.
 func (s *Server) observeLeaderChanges() {
 	for isLeader := range s.raft.LeaderCh() {
-		s.m.Lock()
+		s.mu.Lock()
 		s.leader = isLeader
-		s.m.Unlock()
+		s.mu.Unlock()
 
 		switch isLeader {
 		case true:
@@ -155,12 +154,12 @@ func (s *Server) observeNextTime() {
 		case <-s.shutdownCh:
 			return
 		case t := <-s.raft.fsm.store.C:
-			s.m.Lock()
+			s.mu.Lock()
 			if s.leader {
 				Debug("got time", t)
 				s.timer.Reset(t, false)
 			}
-			s.m.Unlock()
+			s.mu.Unlock()
 		}
 	}
 }

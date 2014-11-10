@@ -17,19 +17,17 @@ type Timer struct {
 	timerRunning bool
 	timer        *time.Timer
 	nextSend     time.Time
-	m            *sync.Mutex
+	mu           sync.Mutex
 	sendFunc     SendFunc
 }
 
 // NewTimer creates a new timer instance, and starts its main loop
 func NewTimer(sendFunc SendFunc) *Timer {
 	t := &Timer{
-		timerRunning: false,
-		timer:        time.NewTimer(twentyFourHours),
-		nextSend:     time.Now().Add(twentyFourHours),
-		m:            &sync.Mutex{},
-		sendFunc:     sendFunc,
-		shutdown:     make(chan bool),
+		timer:    time.NewTimer(twentyFourHours),
+		nextSend: time.Now().Add(twentyFourHours),
+		sendFunc: sendFunc,
+		shutdown: make(chan bool),
 	}
 
 	go t.timerLoop()
@@ -46,8 +44,8 @@ func (t *Timer) Stop() {
 // Reset resets the timer to nextSend, if the timer is not running, or if nextSend is before
 // the current scheduled send.
 func (t *Timer) Reset(nextSend time.Time, force bool) {
-	t.m.Lock()
-	defer t.m.Unlock()
+	t.mu.Lock()
+	defer t.mu.Unlock()
 
 	if nextSend.Before(time.Now()) {
 		nextSend = time.Now()
@@ -65,8 +63,8 @@ func (t *Timer) Reset(nextSend time.Time, force bool) {
 
 // Pause the timer, stopping any existing timeouts
 func (t *Timer) Pause() {
-	t.m.Lock()
-	defer t.m.Unlock()
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	t.timerRunning = false
 	t.timer.Stop()
 }
