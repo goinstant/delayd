@@ -33,7 +33,7 @@ type AMQPClient struct {
 	outFileDefined bool
 	noWait         bool
 	lock           sync.WaitGroup
-	stdin          chan delayd.ClientMessages
+	stdin          chan ClientMessages
 }
 
 // NewClient creates and returns a Client instance
@@ -50,12 +50,12 @@ func NewClient(c Context) (cli *AMQPClient, err error) {
 	cli.shutdown = make(chan bool)
 	cli.noWait = c.Bool("no-wait")
 
-	cli.stdin = make(chan delayd.ClientMessages)
+	cli.stdin = make(chan ClientMessages)
 
 	return cli, nil
 }
 
-func (c *AMQPClient) send(msgs delayd.ClientMessages, conf delayd.Config, params ...int) error {
+func (c *AMQPClient) send(msgs ClientMessages, conf delayd.Config, params ...int) error {
 
 	for _, msg := range msgs.Message {
 		delayd.Debug("SENDING:", msg.Value)
@@ -97,8 +97,8 @@ func (c *AMQPClient) listenInput() {
 				delayd.Fatal("Error reading from STDIN")
 			}
 
-			cliMessages := delayd.ClientMessages{
-				Message: []delayd.Message{
+			cliMessages := ClientMessages{
+				Message: []Message{
 					{
 						Value: string(line[:]),
 						Key:   c.key,
@@ -214,8 +214,20 @@ func (c *AMQPClient) Stop() {
 	c.AMQP.Close()
 }
 
-func loadMessages(path string) (config delayd.ClientMessages, err error) {
+func loadMessages(path string) (config ClientMessages, err error) {
 	delayd.Debug("reading", path)
 	_, err = toml.DecodeFile(path, &config)
 	return config, err
+}
+
+// Message holds a message to send to delayd server
+type Message struct {
+	Value string
+	Key   string
+	Delay int64
+}
+
+// ClientMessages holds delayd client config options
+type ClientMessages struct {
+	Message []Message
 }
