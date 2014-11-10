@@ -198,7 +198,15 @@ func (a *AMQPReceiver) Start() error {
 
 	a.paused = false
 	a.tagCount++
-	m, err := a.Channel.Consume(a.ac.Queue.Name, consumerTag+string(a.tagCount), a.ac.Queue.AutoAck, a.ac.Queue.Exclusive, a.ac.Queue.NoLocal, a.ac.Queue.NoWait, nil)
+	m, err := a.Channel.Consume(
+		a.ac.Queue.Name,
+		consumerTag+string(a.tagCount),
+		a.ac.Queue.AutoAck,
+		a.ac.Queue.Exclusive,
+		a.ac.Queue.NoLocal,
+		a.ac.Queue.NoWait,
+		nil,
+	)
 	a.metaMessages <- m
 	return err
 }
@@ -217,8 +225,6 @@ func (a *AMQPReceiver) Pause() error {
 // AMQPSender sends delayd entries over amqp after their timeout
 type AMQPSender struct {
 	AMQP
-
-	C chan<- Message
 }
 
 // NewAMQPSender creates a new Sender connected to the given  URL.
