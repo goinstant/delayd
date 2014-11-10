@@ -9,35 +9,33 @@ import (
 
 var mh codec.MsgpackHandle
 
-// EntryWrapper wraps the Entry object and also attaches the amqp.Delivery
-// object so that we can call Done whenever we want to ACK or NACK the message
-type EntryWrapper struct {
-	Entry Entry
-	Msg   amqp.Delivery
+// Message represents a message with a broker-agnostic way.
+// It holds Entry object and also a broker-specific message manager.
+type Message struct {
+	Entry
+	MessageDeliverer
 }
 
-// Done is called whenever the user wants to ACK/NACK a message via amqp.
-// a boolean is passed indicated whether we should ACK or NACK
-func (e *EntryWrapper) Done(succ bool) {
-	// If we cannot ACK a message then we are pretty much stuck, we won't
-	// be able to receive any additional messages
-	pan := func() {
-		Panic("Unable to ACK/NACK amqp message")
-	}
+// MessageDeliverer is an interface for a broker-spefici message
+// acknowledgment.
+type MessageDeliverer interface {
+	Ack() error
+	Nack() error
+}
 
-	if succ {
-		err := e.Msg.Ack(false)
-		if err != nil {
-			pan()
-		}
+// AMQPDeliverer implements MessageDeliverer for AMQP.
+type AMQPDeliverer struct {
+	amqp.Delivery
+}
 
-		return
-	}
+// Ack acknowledgs a message via AMQP.
+func (d *AMQPDeliverer) Ack() error {
+	return d.Delivery.Ack(false)
+}
 
-	err := e.Msg.Nack(false, false)
-	if err != nil {
-		pan()
-	}
+// Nack returns negative an acknowledgement via AMQP.
+func (d *AMQPDeliverer) Nack() error {
+	return d.Delivery.Nack(false, false)
 }
 
 // Entry represents a delayed message.

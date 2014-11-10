@@ -42,7 +42,7 @@ func (a *AMQP) Dial(url string) (err error) {
 // AMQPReceiver receives delayd commands over amqp
 type AMQPReceiver struct {
 	AMQP
-	C <-chan EntryWrapper
+	C <-chan Message
 
 	shutdown     chan bool
 	metaMessages chan (<-chan amqp.Delivery)
@@ -101,7 +101,7 @@ func NewAMQPReceiver(ac AMQPConfig) (receiver *AMQPReceiver, err error) {
 		}
 	}
 
-	c := make(chan EntryWrapper)
+	c := make(chan Message)
 	receiver.C = c
 	receiver.shutdown = make(chan bool)
 
@@ -132,49 +132,53 @@ func NewAMQPReceiver(ac AMQPConfig) (receiver *AMQPReceiver, err error) {
 			case <-receiver.shutdown:
 				Debug("received signal to quit reading amqp, exiting goroutine")
 				return
-			case msg := <-messages:
-				entry := Entry{}
-
-				eWrapper := EntryWrapper{Msg: msg}
+			case delivery := <-messages:
+				deliverer := &AMQPDeliverer{Delivery: delivery}
 
 				var delay int64
-				switch val := msg.Headers["delayd-delay"].(type) {
+				switch val := delivery.Headers["delayd-delay"].(type) {
 				case int32:
 					delay = int64(val)
 				case int64:
 					delay = val
 				default:
-					Warn(msg)
+					Warn(delivery)
 					Warn("Bad/missing delay. discarding message")
-					eWrapper.Done(true)
+					deliverer.Ack()
 				}
-				entry.SendAt = time.Now().Add(time.Duration(delay) * time.Millisecond)
 
-				var ok bool
-				entry.Target, ok = msg.Headers["delayd-target"].(string)
-				if !ok {
+				entry := Entry{
+					SendAt: time.Now().Add(time.Duration(delay) * time.Millisecond),
+				}
+
+				target, found := delivery.Headers["delayd-target"].(string)
+				if !found {
 					Warn("Bad/missing target. discarding message")
-					eWrapper.Done(true)
+					deliverer.Ack()
 					continue
 				}
+				entry.Target = target
 
 				// optional key value for overwrite
-				h, ok := msg.Headers["delayd-key"].(string)
-				if ok {
-					entry.Key = h
+				if k, ok := delivery.Headers["delayd-key"].(string); ok {
+					entry.Key = k
 				}
 
 				// optional headers that will be relayed
 				entry.AMQP = &AMQPMessage{
-					ContentType:     msg.ContentType,
-					ContentEncoding: msg.ContentEncoding,
-					CorrelationID:   msg.CorrelationId,
+					ContentType:     delivery.ContentType,
+					ContentEncoding: delivery.ContentEncoding,
+					CorrelationID:   delivery.CorrelationId,
 				}
 
-				entry.Body = msg.Body
-				eWrapper.Entry = entry
-
-				c <- eWrapper
+				entry.Body = delivery.Body
+				msg := Message{
+					Entry: entry,
+					MessageDeliverer: &AMQPDeliverer{
+						Delivery: delivery,
+					},
+				}
+				c <- msg
 			}
 		}
 	}()
@@ -212,7 +216,7 @@ func (a *AMQPReceiver) Pause() error {
 type AMQPSender struct {
 	AMQP
 
-	C chan<- EntryWrapper
+	C chan<- Message
 }
 
 // NewAMQPSender creates a new Sender connected to the given  URL.

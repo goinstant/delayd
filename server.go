@@ -69,8 +69,8 @@ func (s *Server) Run(c Config) {
 	go s.observeNextTime()
 
 	for {
-		eWrapper, ok := <-s.receiver.C
-		entry := eWrapper.Entry
+		msg, ok := <-s.receiver.C
+		entry := msg.Entry
 		// XXX cleanup needed here before exit
 		if !ok {
 			//Fatal("Receiver Consumption failed!")
@@ -85,10 +85,10 @@ func (s *Server) Run(c Config) {
 
 		err = s.raft.Add(b, raftMaxTime)
 		if err != nil {
-			eWrapper.Done(false)
+			msg.Nack()
 		}
 
-		eWrapper.Done(true)
+		msg.Ack()
 	}
 }
 
