@@ -179,8 +179,8 @@ func TestInAndOut(t *testing.T) {
 	assert.NoError(err)
 	defer os.Remove(conf.DataDir)
 
-	delayd.Info(os.Getenv("LOG_DIR"))
-	conf.LogDir = os.Getenv("LOG_DIR")
+	// Use stdout instead of file
+	conf.LogDir = ""
 
 	s := &delayd.Server{}
 	go s.Run(conf)

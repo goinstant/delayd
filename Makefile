@@ -34,12 +34,6 @@ test:
 testint:
 	go list ./... | xargs -n1 go test -v -timeout=10s
 
-testintci:
-	LOG_DIR=$(shell mktemp -d -t delayd.XXXXX); \
-	  go list ./... | LOG_DIR=$$LOG_DIR xargs -n1 go test -v -timeout=10s; \
-	  cat $$LOG_DIR/delayd.log; \
-	  cat $$LOG_DIR/raft.log;
-
 check: lint
 	gofmt -l .
 	[ -z "$$(gofmt -l .)" ]
@@ -75,4 +69,4 @@ funccov:
 	go test -coverprofile /tmp/delayd-coverprof.cov ./...
 	go tool cover -func /tmp/delayd-coverprof.cov
 
-ci: config check testintci
+ci: config check testint
