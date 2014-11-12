@@ -32,6 +32,9 @@ test:
 	go test -v -short -timeout=1s ./...
 
 testint:
+	go list ./... | xargs -n1 go test -v -timeout=10s
+
+testintci:
 	LOG_DIR=$(shell mktemp -d -t delayd.XXXXX); \
 	  go list ./... | LOG_DIR=$$LOG_DIR xargs -n1 go test -v -timeout=10s; \
 	  cat $$LOG_DIR/delayd.log; \
@@ -72,4 +75,4 @@ funccov:
 	go test -coverprofile /tmp/delayd-coverprof.cov ./...
 	go tool cover -func /tmp/delayd-coverprof.cov
 
-ci: config check testint
+ci: config check testintci

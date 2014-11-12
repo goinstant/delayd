@@ -65,45 +65,23 @@ func getFileAsString(path string) string {
 // TestAMQPClient is the delayd client.
 // It can relay messages to the server for easy testing.
 type TestAMQPClient struct {
-	*delayd.AMQP
+	*delayd.AMQPConsumer
 
+	delaydEx   delayd.AMQPConfig
 	deliveryCh <-chan amqp.Delivery
-	config     delayd.AMQPConfig
 	out        io.Writer
 }
 
 // NewClient creates and returns a Client instance
-func NewTestClient(config delayd.AMQPConfig, out io.Writer) (*TestAMQPClient, error) {
-	a, err := delayd.NewAMQP(config.URL)
+func NewTestClient(targetEx, delaydEx delayd.AMQPConfig, out io.Writer) (*TestAMQPClient, error) {
+	a, err := delayd.NewAMQPConsumer(targetEx, "")
 	if err != nil {
 		return nil, err
 	}
 
-	e := config.Exchange
-	if err := a.Channel.ExchangeDeclare(
-		e.Name,
-		e.Kind,
-		e.Durable,
-		e.AutoDelete,
-		e.Internal,
-		e.NoWait,
-		nil,
-	); err != nil {
-		return nil, err
-	}
-
-	q := config.Queue
-	queue, err := a.Channel.QueueDeclare("", q.Durable, q.AutoDelete, q.Exclusive, q.NoWait, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := a.Channel.QueueBind(queue.Name, "", e.Name, q.NoWait, nil); err != nil {
-		return nil, err
-	}
-
+	q := targetEx.Queue
 	deliveryCh, err := a.Channel.Consume(
-		queue.Name,
+		a.Queue.Name,
 		"delayd", // consumer
 		true,     // autoAck
 		q.Exclusive,
@@ -116,9 +94,9 @@ func NewTestClient(config delayd.AMQPConfig, out io.Writer) (*TestAMQPClient, er
 	}
 
 	return &TestAMQPClient{
-		AMQP: a,
+		AMQPConsumer: a,
 
-		config:     config,
+		delaydEx:   delaydEx,
 		deliveryCh: deliveryCh,
 		out:        out,
 	}, nil
@@ -132,14 +110,14 @@ func (c *TestAMQPClient) SendMessages(msgs []Message) error {
 			ContentType:  "text/plain",
 			Headers: amqp.Table{
 				"delayd-delay":  msg.Delay,
-				"delayd-target": c.config.Exchange.Name,
+				"delayd-target": c.Config.Exchange.Name,
 				"delayd-key":    msg.Key,
 			},
 			Body: []byte(msg.Value),
 		}
 		if err := c.Channel.Publish(
-			c.config.Exchange.Name,
-			c.config.Queue.Name,
+			c.delaydEx.Exchange.Name,
+			c.delaydEx.Queue.Name,
 			true,  // mandatory
 			false, // immediate
 			pm,
@@ -214,7 +192,11 @@ func TestInAndOut(t *testing.T) {
 	}
 	defer out.Close()
 
-	c, err := NewTestClient(conf.AMQP, out)
+	targetCfn := conf.AMQP
+	targetCfn.Queue.Name = ""
+	targetCfn.Queue.Bind = []string{m.String("target")}
+	targetCfn.Exchange.Name = m.String("target")
+	c, err := NewTestClient(targetCfn, conf.AMQP, out)
 	if err != nil {
 		t.Fatal(err)
 	}

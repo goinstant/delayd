@@ -14,8 +14,6 @@ const consumerTag = "delayd-"
 type AMQP struct {
 	Channel    *amqp.Channel
 	Connection *amqp.Connection
-
-	url string
 }
 
 // NewAMQP connects to url and opens a communication channel and  it returns
@@ -42,6 +40,61 @@ func NewAMQP(url string) (*AMQP, error) {
 func (a *AMQP) Close() {
 	a.Channel.Close()
 	a.Connection.Close()
+}
+
+// AMQPConsumer represents general AMQP consumer.
+type AMQPConsumer struct {
+	*AMQP
+
+	Config AMQPConfig
+	Queue  amqp.Queue
+}
+
+// NewAMQPConsumer creates a consumer for AMQP and returns a AMQPConsumer instance.
+func NewAMQPConsumer(config AMQPConfig, rk string) (*AMQPConsumer, error) {
+	a, err := NewAMQP(config.URL)
+	if err != nil {
+		return nil, err
+	}
+
+	e := config.Exchange
+	if err := a.Channel.ExchangeDeclare(
+		e.Name,
+		e.Kind,
+		e.Durable,
+		e.AutoDelete,
+		e.Internal,
+		e.NoWait,
+		nil,
+	); err != nil {
+		return nil, err
+	}
+
+	q := config.Queue
+	queue, err := a.Channel.QueueDeclare(
+		q.Name,
+		q.Durable,
+		q.AutoDelete,
+		q.Exclusive,
+		q.NoWait,
+		nil,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, exch := range config.Queue.Bind {
+		if err := a.Channel.QueueBind(queue.Name, rk, exch, q.NoWait, nil); err != nil {
+			return nil, err
+		}
+		Debugf("Binded queue %s to exchange %s with routing key %s", queue.Name, exch, rk)
+	}
+
+	return &AMQPConsumer{
+		AMQP:   a,
+		Config: config,
+		Queue:  queue,
+	}, nil
 }
 
 // AMQPReceiver receives delayd commands over amqp
