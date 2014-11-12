@@ -32,7 +32,10 @@ test:
 	go test -v -short -timeout=1s ./...
 
 testint:
-	go test -v -timeout=10s ./...
+	LOG_DIR=$(shell mktemp -d -t delayd.XXXXX); \
+	  go list ./... | LOG_DIR=$$LOG_DIR xargs -n1 go test -v -timeout=10s; \
+	  cat $$LOG_DIR/delayd.log; \
+	  cat $$LOG_DIR/raft.log;
 
 check: lint
 	gofmt -l .
