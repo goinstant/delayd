@@ -57,6 +57,11 @@ func NewAMQPConsumer(config AMQPConfig, rk string) (*AMQPConsumer, error) {
 		return nil, err
 	}
 
+	Debug("Setting channel QoS to", config.Qos)
+	if err := a.Channel.Qos(config.Qos, 0, false); err != nil {
+		return nil, err
+	}
+
 	e := config.Exchange
 	if err := a.Channel.ExchangeDeclare(
 		e.Name,
@@ -99,7 +104,7 @@ func NewAMQPConsumer(config AMQPConfig, rk string) (*AMQPConsumer, error) {
 
 // AMQPReceiver receives delayd commands over amqp
 type AMQPReceiver struct {
-	*AMQP
+	*AMQPConsumer
 
 	c            chan Message
 	shutdown     chan bool
@@ -114,13 +119,13 @@ type AMQPReceiver struct {
 // NewAMQPReceiver creates a new Receiver based on the provided Config,
 // and starts it listening for commands.
 func NewAMQPReceiver(ac AMQPConfig, routingKey string) (*AMQPReceiver, error) {
-	a, err := NewAMQP(ac.URL)
+	a, err := NewAMQPConsumer(ac, routingKey)
 	if err != nil {
 		return nil, err
 	}
 
 	receiver := &AMQPReceiver{
-		AMQP: a,
+		AMQPConsumer: a,
 
 		c:            make(chan Message),
 		messages:     make(chan amqp.Delivery, ac.Qos),
@@ -128,47 +133,6 @@ func NewAMQPReceiver(ac AMQPConfig, routingKey string) (*AMQPReceiver, error) {
 		ac:           ac,
 		paused:       true,
 		shutdown:     make(chan bool),
-	}
-
-	Debug("Setting channel QoS to", ac.Qos)
-	if err := receiver.Channel.Qos(ac.Qos, 0, false); err != nil {
-		return nil, err
-	}
-
-	if err := receiver.Channel.ExchangeDeclare(
-		ac.Exchange.Name,
-		ac.Exchange.Kind,
-		ac.Exchange.Durable,
-		ac.Exchange.AutoDelete,
-		ac.Exchange.Internal,
-		ac.Exchange.NoWait,
-		nil,
-	); err != nil {
-		Error("Could not declare  Exchange: ", err)
-		return nil, err
-	}
-
-	Debug("Start to consume on", ac.Exchange.Name)
-
-	queue, err := receiver.Channel.QueueDeclare(
-		ac.Queue.Name,
-		ac.Queue.Durable,
-		ac.Queue.AutoDelete,
-		ac.Queue.Exclusive,
-		ac.Queue.NoWait,
-		nil,
-	)
-	if err != nil {
-		Error("Could not declare  Queue: ", err)
-		return nil, err
-	}
-
-	for _, exch := range ac.Queue.Bind {
-		Debugf("Binding queue %s to exchange %s with routing key %s", queue.Name, exch, routingKey)
-		if err := receiver.Channel.QueueBind(queue.Name, routingKey, exch, ac.Queue.NoWait, nil); err != nil {
-			// XXX un-fatal this like the other errors
-			Fatalf("Error binding queue %s to Exchange %s", queue.Name, exch)
-		}
 	}
 
 	go receiver.monitorChannel()

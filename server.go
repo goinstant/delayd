@@ -171,6 +171,10 @@ func (s *Server) timerSend(t time.Time) {
 	}
 
 	Infof("Sending %d entries\n", len(entries))
+	// FIXME: if no entries found, timer is missing newest entries.........
+	if len(entries) < 1 {
+		Warn("timer is missing newest entries...")
+	}
 	for i, e := range entries {
 		err = s.sender.Send(e)
 
@@ -204,11 +208,13 @@ func (s *Server) timerSend(t time.Time) {
 	}
 
 	// ensure everyone is up to date
+	Debug("syncing raft after send.")
 	err = s.raft.SyncAll()
 	if err != nil {
 		Warn("Lost raft leadership during sync after send.")
 		return
 	}
 
+	Debug("synced raft after send.")
 	return
 }
