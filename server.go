@@ -68,12 +68,10 @@ func (s *Server) Run(c Config) {
 	go s.observeNextTime()
 
 	for {
-		Debug("server: start receiving MessageCh on", c.AMQP.Exchange.Name)
 		msg, ok := <-s.receiver.MessageCh()
 		entry := msg.Entry
 		// XXX cleanup needed here before exit
 		if !ok {
-			Debug("Receiver Consumption failed!")
 			continue
 		}
 
