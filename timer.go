@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+const tickDuration = 3 * time.Second
 const twentyFourHours = time.Duration(24) * time.Hour
 
 // SendFunc is called by the timer every time the timer lapses.
@@ -14,6 +15,7 @@ type SendFunc func(time.Time)
 // and the Sender
 type Timer struct {
 	shutdown     chan bool
+	tickCh       chan time.Time
 	timerRunning bool
 	timer        *time.Timer
 	nextSend     time.Time
@@ -25,6 +27,7 @@ type Timer struct {
 func NewTimer(sendFunc SendFunc) *Timer {
 	t := &Timer{
 		timer:    time.NewTimer(twentyFourHours),
+		tickCh:   make(chan time.Time),
 		nextSend: time.Now().Add(twentyFourHours),
 		sendFunc: sendFunc,
 		shutdown: make(chan bool),
@@ -43,25 +46,32 @@ func (t *Timer) Stop() {
 
 // Reset resets the timer to nextSend, if the timer is not running, or if nextSend is before
 // the current scheduled send.
-func (t *Timer) Reset(nextSend time.Time, force bool) {
+func (t *Timer) Reset(resetTo time.Time, force bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	n := time.Now()
 
-	if nextSend.Before(n) {
+	nextSend := resetTo
+	if resetTo.Before(n) {
 		nextSend = n
 	}
 
-	if !force && t.timerRunning && nextSend.After(t.nextSend) {
-		return
-	}
+	Debugf("timer: next: %s, t.next: %s, now: %s, resetTo: %s", nextSend, t.nextSend, n, resetTo)
+	if force || !t.timerRunning || !nextSend.After(t.nextSend) {
+		d := nextSend.Sub(n)
+		if nextSend.Equal(n) {
+			Debug("timer: flusing a timer immediately", n)
+			t.tickCh <- n
+			Debug("timer: flushed a timer", n)
+			return
+		}
 
-	Debug("Timer reset to", nextSend)
-	t.timerRunning = true
-	Debug("Timer reset:", n)
-	t.timer.Reset(nextSend.Sub(n))
-	t.nextSend = nextSend
+		Debugf("timer: reset to %s, %s later", nextSend, d)
+		t.timerRunning = true
+		t.timer.Reset(d)
+		t.nextSend = nextSend
+	}
 }
 
 // Pause the timer, stopping any existing timeouts
@@ -77,9 +87,15 @@ func (t *Timer) timerLoop() {
 		select {
 		case <-t.shutdown:
 			return
+		case sendTime := <-t.tickCh:
+			Debug("timer: received from tickCh:", sendTime)
+			t.sendFunc(sendTime)
+			Debug("timer: sent from tickCh:", sendTime)
 		case sendTime := <-t.timer.C:
+			Debug("timer: received from timer:", sendTime)
 			t.Pause()
 			t.sendFunc(sendTime)
+			Debug("timer: sent from timer:", sendTime)
 		}
 	}
 }
