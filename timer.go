@@ -47,8 +47,10 @@ func (t *Timer) Reset(nextSend time.Time, force bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	if nextSend.Before(time.Now()) {
-		nextSend = time.Now()
+	n := time.Now()
+
+	if nextSend.Before(n) {
+		nextSend = n
 	}
 
 	if !force && t.timerRunning && nextSend.After(t.nextSend) {
@@ -57,7 +59,8 @@ func (t *Timer) Reset(nextSend time.Time, force bool) {
 
 	Debug("Timer reset to", nextSend)
 	t.timerRunning = true
-	t.timer.Reset(nextSend.Sub(time.Now()))
+	Debug("Timer reset:", n)
+	t.timer.Reset(nextSend.Sub(n))
 	t.nextSend = nextSend
 }
 
