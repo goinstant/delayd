@@ -25,6 +25,7 @@ type Server struct {
 	mu         sync.Mutex
 }
 
+// NewServer initialize Server instance.
 func NewServer(c Config) (*Server, error) {
 	if len(c.LogDir) != 0 {
 		logFile := filepath.Join(c.LogDir, "delayd.log")
