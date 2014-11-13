@@ -18,6 +18,7 @@ type Timer struct {
 	tickCh       chan time.Time
 	timerRunning bool
 	timer        *time.Timer
+	ticker       *time.Ticker
 	nextSend     time.Time
 	mu           sync.Mutex
 	sendFunc     SendFunc
@@ -27,12 +28,14 @@ type Timer struct {
 func NewTimer(sendFunc SendFunc) *Timer {
 	t := &Timer{
 		timer:    time.NewTimer(twentyFourHours),
+		ticker:   time.NewTicker(tickDuration),
 		tickCh:   make(chan time.Time),
 		nextSend: time.Now().Add(twentyFourHours),
 		sendFunc: sendFunc,
 		shutdown: make(chan bool),
 	}
 
+	go t.tickerLoop()
 	go t.timerLoop()
 
 	return t
@@ -80,6 +83,19 @@ func (t *Timer) Pause() {
 	defer t.mu.Unlock()
 	t.timerRunning = false
 	t.timer.Stop()
+}
+
+func (t *Timer) tickerLoop() {
+	for {
+		select {
+		case <-t.shutdown:
+			return
+		case sendTime := <-t.ticker.C:
+			Debug("timer: received from ticker:", sendTime)
+			t.tickCh <- sendTime
+			Debug("timer: sent from ticker:", sendTime)
+		}
+	}
 }
 
 func (t *Timer) timerLoop() {
