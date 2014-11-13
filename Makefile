@@ -32,7 +32,7 @@ test:
 	go test -v -short -timeout=1s ./...
 
 testint:
-	go list ./... | xargs -n1 go test -v -timeout=10s
+	go list ./... | xargs -n1 go test -v -timeout=60s
 
 check: lint
 	gofmt -l .
