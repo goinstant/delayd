@@ -182,6 +182,7 @@ func (a *AMQPReceiver) messageLoop() {
 				Warn(delivery)
 				Warn("Bad/missing delay. discarding message")
 				deliverer.Ack()
+				continue
 			}
 
 			entry := Entry{

@@ -36,11 +36,6 @@ func NewServer(c Config) (*Server, error) {
 		log.SetOutput(logOutput)
 	}
 
-	Debug("Creating data dir: ", c.DataDir)
-	if err := os.MkdirAll(c.DataDir, 0755); err != nil {
-		return nil, err
-	}
-
 	receiver, err := NewAMQPReceiver(c.AMQP, routingKey)
 	if err != nil {
 		return nil, err
@@ -64,9 +59,9 @@ func NewServer(c Config) (*Server, error) {
 	}, nil
 }
 
-// Run initializes the Server from a Config, and begins its main loop.
+// Run starts server and begins its main loop.
 func (s *Server) Run() {
-	Info("Starting delayd")
+	Info("server: starting delayd")
 
 	s.timer = NewTimer(s.timerSend)
 
@@ -81,14 +76,15 @@ func (s *Server) Run() {
 			continue
 		}
 
-		Debug("Got entry: ", entry)
+		Debug("server: got entry:", entry)
 		b, err := entry.ToBytes()
 		if err != nil {
-			Error("Error encoding entry", err)
+			Error("server: error encoding entry: ", err)
 			continue
 		}
 
 		if err := s.raft.Add(b, raftMaxTime); err != nil {
+			Error("server: failed to add: ", err)
 			msg.Nack()
 			continue
 		}
@@ -99,7 +95,7 @@ func (s *Server) Run() {
 
 // Stop shuts down the Server cleanly. Order of the Close calls is important.
 func (s *Server) Stop() {
-	Info("Shutting down gracefully.")
+	Info("server: shutting down gracefully.")
 
 	// stop triggering new changes to the FSM
 	s.receiver.Close()
@@ -112,13 +108,13 @@ func (s *Server) Stop() {
 
 	s.raft.Close()
 
-	Info("Terminated.")
+	Info("server: terminated.")
 }
 
 func (s *Server) resetTimer() {
 	ok, t, err := s.raft.fsm.store.NextTime()
 	if err != nil {
-		Fatal("Could not read initial send time from storage: ", err)
+		Fatal("server: could not read initial send time from storage:", err)
 	}
 	if ok {
 		s.timer.Reset(t, true)
@@ -133,21 +129,19 @@ func (s *Server) observeLeaderChanges() {
 		s.leader = isLeader
 		s.mu.Unlock()
 
-		switch isLeader {
-		case true:
-			Debug("Became raft leader")
+		if isLeader {
+			Debug("server: became raft leader")
 			s.resetTimer()
 			err := s.receiver.Start()
 			if err != nil {
-				Fatal("Error while starting receiver: ", err)
+				Fatal("server: error while starting receiver:", err)
 			}
-
-		case false:
-			Debug("Lost raft leadership")
+		} else {
+			Debug("server: lost raft leadership")
 			s.timer.Pause()
 			err := s.receiver.Pause()
 			if err != nil {
-				Fatal("Error while starting receiver: ", err)
+				Fatal("server: error while starting receiver:", err)
 			}
 		}
 	}
@@ -162,7 +156,7 @@ func (s *Server) observeNextTime() {
 		case t := <-s.raft.fsm.store.C:
 			s.mu.Lock()
 			if s.leader {
-				Debug("got time", t)
+				Debug("server: got time: ", t)
 				s.timer.Reset(t, false)
 			}
 			s.mu.Unlock()
@@ -173,54 +167,47 @@ func (s *Server) observeNextTime() {
 func (s *Server) timerSend(t time.Time) {
 	uuids, entries, err := s.raft.fsm.store.Get(t)
 	if err != nil {
-		Fatal("Could not read entries from db: ", err)
+		Fatal("server: could not read entries from db:", err)
 	}
 
-	Infof("Sending %d entries\n", len(entries))
-	// FIXME: if no entries found, timer is missing newest entries.........
+	Infof("server: sending %d entries", len(entries))
 	if len(entries) < 1 {
-		Warn("timer is missing newest entries...")
+		// FIXME: if no entries found, timer is missing newest entries.........
+		Warn("server: timer is missing newest entries...")
 	}
-	for i, e := range entries {
-		err = s.sender.Send(e)
 
+	for i, e := range entries {
 		// error 504 code means that the exchange we were trying
 		// to send on didnt exist.  In the case of delayd this usually
 		// means that a consumer didn't set up the exchange they wish
-		// to be notified on.  We do not attempt to make this for them,
+		// to be notified on. We do not attempt to make this for them,
 		// as we don't know what exchange options they would want, we
 		// simply drop this message, other errors are fatal
 
-		if err, ok := err.(*amqp.Error); ok {
-			if err.Code != 504 {
-				Fatal("Could not send entry: ", err)
+		if err := s.sender.Send(e); err != nil {
+			if err, ok := err.(*amqp.Error); ok && err.Code == 504 {
+				Warnf("server: channel/connection not set up for exchange `%s`, message will be deleted", e.Target, err)
+				break
 			} else {
-				Warnf("channel/connection not set up for exchange `%s`, message will be deleted", e.Target, err)
+				Fatal("server: could not send entry: ", err)
 			}
 		}
 
-		err = s.raft.Remove(uuids[i], raftMaxTime)
-		if err != nil {
+		if err := s.raft.Remove(uuids[i], raftMaxTime); err != nil {
 			// This node is no longer the leader. give up on other amqp sends,
 			// and scheduling the next emission
-			Warnf("Lost raft leadership during remove. AMQP send will be a duplicate. uuid=%x\n", uuids[i])
+			Warnf("server: lost raft leadership during remove. AMQP send will be a duplicate. uuid=%x", uuids[i])
 			break
 		}
-	}
-
-	if err != nil {
-		// don't reschedule
-		return
 	}
 
 	// ensure everyone is up to date
 	Debug("syncing raft after send.")
 	err = s.raft.SyncAll()
 	if err != nil {
-		Warn("Lost raft leadership during sync after send.")
+		Warn("server: lost raft leadership during sync after send.")
 		return
 	}
 
 	Debug("synced raft after send.")
-	return
 }

@@ -3,7 +3,7 @@ package delayd
 import (
 	"io/ioutil"
 	"os"
-	"path"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -74,11 +74,11 @@ func (s *Storage) initDB() error {
 	}
 	s.dir = dir
 
-	storageDir := path.Join(s.dir, "db")
+	storageDir := filepath.Join(s.dir, "db")
 	if err := os.MkdirAll(storageDir, 0755); err != nil {
 		return err
 	}
-	Debug("Created temporary storage directory:", storageDir)
+	Debug("storage: created temporary storage directory:", storageDir)
 
 	// 3 sub dbs: Entries, time index, and key index
 	if err := s.env.SetMaxDBs(mdb.DBI(3)); err != nil {
@@ -215,20 +215,20 @@ func (s *Storage) Add(uuid []byte, e Entry) error {
 func (s *Storage) innerGet(t time.Time, all bool) ([][]byte, []Entry, error) {
 	txn, dbis, err := s.startTxn(true, timeDB, entryDB)
 	if err != nil {
-		Error("Error creating transaction: ", err)
+		Error("storage: error creating transaction:", err)
 		return nil, nil, err
 	}
 	defer txn.Abort()
 
 	cursor, err := txn.CursorOpen(dbis[0])
 	if err != nil {
-		Error("Error getting cursor for get entry: ", err)
+		Error("storage: error getting cursor for get entry:", err)
 		return nil, nil, err
 	}
 	defer cursor.Close()
 
 	sk := uint64(t.UnixNano())
-	Debug("Looking for: ", t, t.UnixNano())
+	Debug("storage: looking for:", t, t.UnixNano())
 
 	uuids := [][]byte{}
 	entries := []Entry{}
@@ -276,7 +276,7 @@ func (s *Storage) GetAll() (uuids [][]byte, entries []Entry, err error) {
 func (s *Storage) innerNextTime(txn *mdb.Txn, dbi mdb.DBI) (bool, time.Time, error) {
 	cursor, err := txn.CursorOpen(dbi)
 	if err != nil {
-		Error("Error getting cursor for next time: ", err)
+		Error("storage: error getting cursor for next time:", err)
 		return false, time.Time{}, err
 	}
 	defer cursor.Close()
@@ -286,7 +286,7 @@ func (s *Storage) innerNextTime(txn *mdb.Txn, dbi mdb.DBI) (bool, time.Time, err
 		return false, time.Time{}, nil
 	}
 	if err != nil {
-		Error("Error reading next time from db: ", err)
+		Error("storage: error reading next time from db:", err)
 		return false, time.Time{}, err
 	}
 
@@ -297,7 +297,7 @@ func (s *Storage) innerNextTime(txn *mdb.Txn, dbi mdb.DBI) (bool, time.Time, err
 func (s *Storage) NextTime() (bool, time.Time, error) {
 	txn, dbis, err := s.startTxn(true, timeDB)
 	if err != nil {
-		Error("Error creating transaction: ", err)
+		Error("storage: error creating transaction:", err)
 		return false, time.Time{}, err
 	}
 	defer txn.Abort()
@@ -308,31 +308,31 @@ func (s *Storage) NextTime() (bool, time.Time, error) {
 func (s *Storage) innerRemove(txn *mdb.Txn, dbis []mdb.DBI, uuid []byte) error {
 	be, err := txn.Get(dbis[1], uuid)
 	if err != nil {
-		Error("Could not read entry: ", err)
+		Error("storage: could not read entry:", err)
 		return err
 	}
 
 	e, err := entryFromBytes(be)
 	if err != nil {
-		Error("Could not parse entry: ", err)
+		Error("storage: could not parse entry:", err)
 		return err
 	}
 
 	k := uint64ToBytes(uint64(e.SendAt.UnixNano()))
 	if err := txn.Del(dbis[0], k, uuid); err != nil {
-		Error("Could not delete from time series: ", err)
+		Error("storage: could not delete from time series:", err)
 		return err
 	}
 
 	if err := txn.Del(dbis[1], uuid, nil); err != nil {
-		Error("Could not delete entry: ", err)
+		Error("storage: could not delete entry:", err)
 		return err
 	}
 
 	// check if the key exists before deleting.
 	cursor, err := txn.CursorOpen(dbis[2])
 	if err != nil {
-		Error("Error getting cursor for keys: ", err)
+		Error("storage: error getting cursor for keys:", err)
 		return err
 	}
 	defer cursor.Close()
@@ -346,13 +346,13 @@ func (s *Storage) innerRemove(txn *mdb.Txn, dbis []mdb.DBI, uuid []byte) error {
 		return nil
 	}
 	if err != nil {
-		Error("Error reading cursor: ", err)
+		Error("storage: error reading cursor:", err)
 		return err
 	}
 
 	err = txn.Del(dbis[2], []byte(e.Key), nil)
 	if err != nil {
-		Error("Could not delete from keys: ", err)
+		Error("storage: could not delete from keys:", err)
 	}
 	return err
 }
