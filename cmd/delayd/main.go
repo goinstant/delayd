@@ -47,9 +47,12 @@ func execute(c *cli.Context) {
 		delayd.Fatal("Unable to read config file: ", err)
 	}
 
-	s := &delayd.Server{}
+	s, err := delayd.NewServer(config)
+	if err != nil {
+		panic(err)
+	}
 	installSigHandler(s)
-	s.Run(config)
+	s.Run()
 }
 
 func main() {

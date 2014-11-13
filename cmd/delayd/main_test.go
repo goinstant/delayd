@@ -182,8 +182,11 @@ func TestInAndOut(t *testing.T) {
 	// Use stdout instead of file
 	conf.LogDir = ""
 
-	s := &delayd.Server{}
-	go s.Run(conf)
+	s, err := delayd.NewServer(conf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go s.Run()
 	defer s.Stop()
 
 	out, err := os.OpenFile(m.String("out"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)

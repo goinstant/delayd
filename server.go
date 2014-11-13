@@ -3,7 +3,7 @@ package delayd
 import (
 	"log"
 	"os"
-	"path"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -25,45 +25,50 @@ type Server struct {
 	mu         sync.Mutex
 }
 
-// Run initializes the Server from a Config, and begins its main loop.
-func (s *Server) Run(c Config) {
-	s.shutdownCh = make(chan bool)
-
+func NewServer(c Config) (*Server, error) {
 	if len(c.LogDir) != 0 {
-		Debug("Creating log dir: ", c.LogDir)
-		err := os.MkdirAll(c.LogDir, 0755)
-		if err != nil {
-			Fatal("Error creating log dir: ", err)
-		}
-		logFile := path.Join(c.LogDir, "delayd.log")
+		logFile := filepath.Join(c.LogDir, "delayd.log")
 		logOutput, err := os.OpenFile(logFile, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0666)
+		if err != nil {
+			return nil, err
+		}
 		log.SetOutput(logOutput)
 	}
 
+	Debug("Creating data dir: ", c.DataDir)
+	if err := os.MkdirAll(c.DataDir, 0755); err != nil {
+		return nil, err
+	}
+
+	receiver, err := NewAMQPReceiver(c.AMQP, routingKey)
+	if err != nil {
+		return nil, err
+	}
+
+	sender, err := NewAMQPSender(c.AMQP.URL)
+	if err != nil {
+		return nil, err
+	}
+
+	raft, err := NewRaft(c.Raft, c.DataDir, c.LogDir)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Server{
+		sender:     sender,
+		receiver:   receiver,
+		raft:       raft,
+		shutdownCh: make(chan bool),
+	}, nil
+}
+
+// Run initializes the Server from a Config, and begins its main loop.
+func (s *Server) Run() {
 	Info("Starting delayd")
 
-	Debug("Creating data dir: ", c.DataDir)
-	err := os.MkdirAll(c.DataDir, 0755)
-	if err != nil {
-		Fatal("Error creating data dir: ", err)
-	}
-
-	s.receiver, err = NewAMQPReceiver(c.AMQP, routingKey)
-	if err != nil {
-		Fatal("Could not initialize receiver: ", err)
-	}
-
-	s.sender, err = NewAMQPSender(c.AMQP.URL)
-	if err != nil {
-		Fatal("Could not initialize sender: ", err)
-	}
-
-	s.raft, err = NewRaft(c.Raft, c.DataDir, c.LogDir)
-	if err != nil {
-		Fatal("Could not initialize raft: ", err)
-	}
-
 	s.timer = NewTimer(s.timerSend)
+
 	go s.observeLeaderChanges()
 	go s.observeNextTime()
 
