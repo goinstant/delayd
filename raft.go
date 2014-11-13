@@ -273,9 +273,9 @@ func NewRaft(c RaftConfig, prefix string, logDir string) (*Raft, error) {
 
 	return &Raft{
 		transport: transport,
-		mdb: mdb,
-		fsm: fsm,
-		raft: raft,
+		mdb:       mdb,
+		fsm:       fsm,
+		raft:      raft,
 	}, nil
 }
 
