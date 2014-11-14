@@ -249,7 +249,7 @@ func NewRaft(c RaftConfig, prefix string, logDir string) (*Raft, error) {
 			}
 		}
 	} else {
-		Warn("raft: uunning in single node permitted mode. only use this for testing!")
+		Warn("raft: running in single node permitted mode. only use this for testing!")
 	}
 
 	mdb, err := raftmdb.NewMDBStore(raftDir)
