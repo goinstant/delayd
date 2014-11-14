@@ -14,33 +14,34 @@ type AMQPQueue struct {
 
 // AMQPExchange holds configuration for the exchange used by the AMQPReceiver
 type AMQPExchange struct {
-	Name string `toml:"name"`
-	Kind string `toml:"kind"`
-
-	AutoDelete                bool `toml:"auto_delete"`
-	Durable, Internal, NoWait bool
+	Name       string `toml:"name"`
+	Kind       string `toml:"kind"`
+	AutoDelete bool   `toml:"auto_delete"`
+	Durable    bool   `toml:"durable"`
+	Internal   bool   `toml:"internal"`
+	NoWait     bool   `toml:"no_wait"`
 }
 
 // AMQPConfig holds configuration for AMQP senders and receivers.
 type AMQPConfig struct {
 	URL      string       `toml:"url"`
-	Exchange AMQPExchange `toml:"exchange"`
 	Qos      int          `toml:"qos"`
+	Exchange AMQPExchange `toml:"exchange"`
 	Queue    AMQPQueue    `toml:"queue"`
 }
 
 // RaftConfig holds configuration for Raft concensus
 type RaftConfig struct {
-	Single    bool `toml:"single_node"`
-	Peers     []string
-	Listen    string
-	Advertise *string
+	Single    bool     `toml:"single_node"`
+	Peers     []string `toml:"peers"`
+	Listen    string   `toml:"listen"`
+	Advertise string   `toml:"advertise"`
 }
 
 // Config holds delayd configuration
 type Config struct {
 	AMQP    AMQPConfig `toml:"amqp"`
+	Raft    RaftConfig `toml:"raft"`
 	DataDir string     `toml:"data_dir"`
 	LogDir  string     `toml:"log_dir"`
-	Raft    RaftConfig
 }

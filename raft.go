@@ -214,11 +214,11 @@ func NewRaft(c RaftConfig, prefix string, logDir string) (*Raft, error) {
 
 	// this should be our externally visible address. If not provided in the
 	// config as 'advertise', we use the address of the listen config.
-	if c.Advertise == nil {
-		c.Advertise = &c.Listen
+	if c.Advertise == "" {
+		c.Advertise = c.Listen
 	}
 
-	a, err := net.ResolveTCPAddr("tcp", *c.Advertise)
+	a, err := net.ResolveTCPAddr("tcp", c.Advertise)
 	if err != nil {
 		Error("raft: could not lookup raft advertise address:", err)
 		return nil, err
