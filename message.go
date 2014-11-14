@@ -16,7 +16,7 @@ type Message struct {
 	MessageDeliverer
 }
 
-// MessageDeliverer is an interface for a broker-spefici message
+// MessageDeliverer is an interface for a broker-specific message
 // acknowledgment.
 type MessageDeliverer interface {
 	Ack() error
@@ -33,7 +33,7 @@ func (d *AMQPDeliverer) Ack() error {
 	return d.Delivery.Ack(false)
 }
 
-// Nack returns negative an acknowledgement via AMQP.
+// Nack returns a negative acknowledgement via AMQP.
 func (d *AMQPDeliverer) Nack() error {
 	return d.Delivery.Nack(false, false)
 }
