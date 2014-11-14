@@ -1,0 +1,14 @@
+delayd:
+  build: "."
+  environment:
+    AMQP_URL: "amqp://rabbitmq"
+    RAFT_PEERS:
+    RAFT_HOSTS:
+  links:
+    - rabbitmq
+
+rabbitmq:
+  image: dockerfile/rabbitmq
+  ports:
+    - "5672:5672"
+    - "15672:15672"

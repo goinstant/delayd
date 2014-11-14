@@ -29,10 +29,10 @@ update-deps:
 
 
 test:
-	go test -short -timeout=1s ./...
+	go test -v -short -timeout=1s ./...
 
 testint:
-	go test -timeout=10s ./...
+	go list ./... | xargs -n1 go test -v -timeout=60s
 
 check: lint
 	gofmt -l .
@@ -48,17 +48,25 @@ lint:
 	$(LINT) .
 	[ -z "$$($(LINT) .)" ]
 
+config:
+	if [ -f delayd.toml.local ]; then \
+	  cp delayd.toml.local delayd.toml; \
+	else \
+	  cp delayd.toml.sample delayd.toml; \
+	fi
+	cp delayd.toml cmd/delayd/delayd.toml
+
 cover:
 	go test -cover ./...
 
 # has to use the full package name for me
 htmlcov:
-	go test -coverprofile /tmp/delayd-coverprof.cov github.com/goinstant/delayd
+	go test -coverprofile /tmp/delayd-coverprof.cov ./...
 	go tool cover -html /tmp/delayd-coverprof.cov
 
 # has to use the full package name for me
 funccov:
-	go test -coverprofile /tmp/delayd-coverprof.cov github.com/goinstant/delayd
+	go test -coverprofile /tmp/delayd-coverprof.cov ./...
 	go tool cover -func /tmp/delayd-coverprof.cov
 
-ci: check testint
+ci: config check testint

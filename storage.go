@@ -1,9 +1,9 @@
-package main
+package delayd
 
 import (
 	"io/ioutil"
 	"os"
-	"path"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -17,6 +17,9 @@ const (
 
 	dbMaxMapSize32bit uint64 = 512 * 1024 * 1024       // 512MB maximum size
 	dbMaxMapSize64bit uint64 = 32 * 1024 * 1024 * 1024 // 32GB maximum size
+
+	// Optimize our flags for speed over safety. Raft handles durable storage.
+	dbFlags uint = mdb.NOMETASYNC | mdb.NOSYNC | mdb.NOTLS
 )
 
 var allDBs = []string{timeDB, keyDB, entryDB}
@@ -34,26 +37,25 @@ type Storage struct {
 
 // NewStorage creates a new Storage instance. prefix is the base directory where
 // data is written on-disk.
-func NewStorage() (s *Storage, err error) {
-	s = new(Storage)
-
-	err = s.initDB()
-	if err != nil {
-		return
+func NewStorage() (*Storage, error) {
+	s := &Storage{}
+	if err := s.initDB(); err != nil {
+		return nil, err
 	}
 
 	c := make(chan time.Time, 10)
 	s.C = c
 	s.c = c
 
-	return
+	return s, nil
 }
 
-func (s *Storage) initDB() (err error) {
-	s.env, err = mdb.NewEnv()
+func (s *Storage) initDB() error {
+	env, err := mdb.NewEnv()
 	if err != nil {
-		return
+		return err
 	}
+	s.env = env
 
 	// Set the maximum db size based on 32/64bit
 	dbSize := dbMaxMapSize32bit
@@ -62,51 +64,43 @@ func (s *Storage) initDB() (err error) {
 	}
 
 	// Increase the maximum map size
-	err = s.env.SetMapSize(dbSize)
-	if err != nil {
-		return
+	if err := s.env.SetMapSize(dbSize); err != nil {
+		return err
 	}
 
-	s.dir, err = ioutil.TempDir("", "delayd")
+	dir, err := ioutil.TempDir("", "delayd")
 	if err != nil {
-		return
+		return err
 	}
+	s.dir = dir
 
-	storageDir := path.Join(s.dir, "db")
-	err = os.MkdirAll(storageDir, 0755)
-	if err != nil {
-		return
+	storageDir := filepath.Join(s.dir, "db")
+	if err := os.MkdirAll(storageDir, 0755); err != nil {
+		return err
 	}
-	Debug("Created temporary storage directory:", storageDir)
+	Debug("storage: created temporary storage directory:", storageDir)
 
 	// 3 sub dbs: Entries, time index, and key index
-	err = s.env.SetMaxDBs(mdb.DBI(3))
-	if err != nil {
-		return
+	if err := s.env.SetMaxDBs(mdb.DBI(3)); err != nil {
+		return err
 	}
 
-	// Optimize our flags for speed over safety. Raft handles durable storage.
-	var flags uint
-	flags = mdb.NOMETASYNC | mdb.NOSYNC | mdb.NOTLS
-
-	err = s.env.Open(storageDir, flags, 0755)
-	if err != nil {
-		return
+	if err := s.env.Open(storageDir, dbFlags, 0755); err != nil {
+		return err
 	}
 
 	// Initialize sub dbs
 	txn, _, err := s.startTxn(false, allDBs...)
 	if err != nil {
 		txn.Abort()
-		return
+		return err
 	}
 
-	err = txn.Commit()
-	if err != nil {
-		return
+	if err := txn.Commit(); err != nil {
+		return err
 	}
 
-	return
+	return nil
 }
 
 // Close gracefully shuts down a storage instance. Before calling it, ensure
@@ -119,7 +113,7 @@ func (s *Storage) Close() {
 }
 
 // startTxn is used to start a transaction and open all the associated sub-databases
-func (s *Storage) startTxn(readonly bool, open ...string) (txn *mdb.Txn, dbis []mdb.DBI, err error) {
+func (s *Storage) startTxn(readonly bool, open ...string) (*mdb.Txn, []mdb.DBI, error) {
 	var txnFlags uint
 	var dbiFlags uint
 	if readonly {
@@ -128,11 +122,12 @@ func (s *Storage) startTxn(readonly bool, open ...string) (txn *mdb.Txn, dbis []
 		dbiFlags |= mdb.CREATE
 	}
 
-	txn, err = s.env.BeginTxn(nil, txnFlags)
+	txn, err := s.env.BeginTxn(nil, txnFlags)
 	if err != nil {
-		return
+		return nil, nil, err
 	}
 
+	dbis := []mdb.DBI{}
 	for _, name := range open {
 		// Allow duplicate entries for the same time
 		realFlags := dbiFlags
@@ -140,49 +135,47 @@ func (s *Storage) startTxn(readonly bool, open ...string) (txn *mdb.Txn, dbis []
 			realFlags |= mdb.DUPSORT
 		}
 
-		var dbi mdb.DBI
-		dbi, err = txn.DBIOpen(name, realFlags)
+		dbi, err := txn.DBIOpen(name, realFlags)
 		if err != nil {
 			txn.Abort()
-			return
+			return nil, nil, err
 		}
 		dbis = append(dbis, dbi)
 	}
 
-	return
+	return txn, dbis, nil
 }
 
 // Add an Entry to the database.
-func (s *Storage) Add(uuid []byte, e Entry) (err error) {
+func (s *Storage) Add(uuid []byte, e *Entry) error {
 	txn, dbis, err := s.startTxn(false, timeDB, entryDB, keyDB)
 	if err != nil {
-		return
+		return err
 	}
 
 	if e.Key != "" {
-		Debug("Entry has key: ", e.Key)
+		Debug("storage: adding entry has key:", e.Key)
 
-		var ouuid []byte
-		ouuid, err = txn.Get(dbis[2], []byte(e.Key))
+		ouuid, err := txn.Get(dbis[2], []byte(e.Key))
 		if err != nil && err != mdb.NotFound {
 			txn.Abort()
-			return
+			return err
 		}
 
 		if err == nil {
-			Debug("Exising key found; removing.")
+			Debug("storage: exising key found; removing.")
 
-			err = s.innerRemove(txn, dbis, ouuid)
+			err := s.innerRemove(txn, dbis, ouuid)
 			if err != nil {
 				txn.Abort()
-				return
+				return err
 			}
 		}
 
 		err = txn.Put(dbis[2], []byte(e.Key), uuid, 0)
 		if err != nil {
 			txn.Abort()
-			return
+			return err
 		}
 	}
 
@@ -190,218 +183,201 @@ func (s *Storage) Add(uuid []byte, e Entry) (err error) {
 	err = txn.Put(dbis[0], k, uuid, 0)
 	if err != nil {
 		txn.Abort()
-		return
+		return err
 	}
 
 	b, err := e.ToBytes()
 	if err != nil {
 		txn.Abort()
-		return
+		return err
 	}
 
 	err = txn.Put(dbis[1], uuid, b, 0)
 	if err != nil {
 		txn.Abort()
-		return
+		return err
 	}
 
 	ok, t, err := s.innerNextTime(txn, dbis[0])
 	if err != nil {
 		txn.Abort()
-		return
+		return err
 	}
 
 	err = txn.Commit()
-
 	if err == nil && ok {
 		s.c <- t
 	}
 
-	return
+	return nil
 }
 
-func (s *Storage) innerGet(t time.Time, all bool) (uuids [][]byte, entries []Entry, err error) {
+func (s *Storage) innerGet(t time.Time, all bool) ([][]byte, []*Entry, error) {
 	txn, dbis, err := s.startTxn(true, timeDB, entryDB)
 	if err != nil {
-		Error("Error creating transaction: ", err)
-		return
+		Error("storage: error creating transaction:", err)
+		return nil, nil, err
 	}
 	defer txn.Abort()
 
 	cursor, err := txn.CursorOpen(dbis[0])
 	if err != nil {
-		Error("Error getting cursor for get entry: ", err)
-		return
+		Error("storage: error getting cursor for get entry:", err)
+		return nil, nil, err
 	}
 	defer cursor.Close()
 
 	sk := uint64(t.UnixNano())
-	Debug("Looking for: ", t, t.UnixNano())
+	Debug("storage: looking for:", t, t.UnixNano())
 
+	uuids := [][]byte{}
+	entries := []*Entry{}
 	for {
-		var k, uuid, v []byte
-		k, uuid, err = cursor.Get(nil, mdb.NEXT)
+		k, uuid, err := cursor.Get(nil, mdb.NEXT)
 		if err == mdb.NotFound {
-			err = nil
 			break
 		}
 		if err != nil {
-			return
+			return nil, nil, err
 		}
 
-		if !all {
-			kt := bytesToUint64(k)
-			if kt > sk {
-				err = nil
-				break
-			}
+		if kt := bytesToUint64(k); !all && kt > sk {
+			// These are no more entries since keys are always sorted
+			break
 		}
 
-		v, err = txn.Get(dbis[1], uuid)
+		v, err := txn.Get(dbis[1], uuid)
 		if err != nil {
-			return
+			return nil, nil, err
 		}
 
-		var entry Entry
-		entry, err = entryFromBytes(v)
+		entry, err := entryFromBytes(v)
 		if err != nil {
-			return
+			return nil, nil, err
 		}
 
 		entries = append(entries, entry)
 		uuids = append(uuids, uuid)
 	}
 
-	return
+	return uuids, entries, nil
 }
 
 // Get returns all entries that occur at or before the provided time
-func (s *Storage) Get(t time.Time) (uuids [][]byte, entries []Entry, err error) {
+func (s *Storage) Get(t time.Time) (uuids [][]byte, entries []*Entry, err error) {
 	return s.innerGet(t, false)
 }
 
 // GetAll returns every entry in storage
-func (s *Storage) GetAll() (uuids [][]byte, entries []Entry, err error) {
+func (s *Storage) GetAll() (uuids [][]byte, entries []*Entry, err error) {
 	return s.innerGet(time.Now(), true)
 }
 
-func (s *Storage) innerNextTime(txn *mdb.Txn, dbi mdb.DBI) (ok bool, t time.Time, err error) {
-	ok = true
+func (s *Storage) innerNextTime(txn *mdb.Txn, dbi mdb.DBI) (bool, time.Time, error) {
 	cursor, err := txn.CursorOpen(dbi)
 	if err != nil {
-		Error("Error getting cursor for next time: ", err)
-		return
+		Error("storage: error getting cursor for next time:", err)
+		return false, time.Time{}, err
 	}
 	defer cursor.Close()
 
 	k, _, err := cursor.Get(nil, mdb.FIRST)
 	if err == mdb.NotFound {
-		err = nil
-		ok = false
-		return
+		return false, time.Time{}, nil
 	}
 	if err != nil {
-		Error("Error reading next time from db: ", err)
-		return
+		Error("storage: error reading next time from db:", err)
+		return false, time.Time{}, err
 	}
 
-	t = time.Unix(0, int64(bytesToUint64(k)))
-	return
+	return true, time.Unix(0, int64(bytesToUint64(k))), nil
 }
 
 // NextTime gets the next entry send time from the db
-func (s *Storage) NextTime() (ok bool, t time.Time, err error) {
+func (s *Storage) NextTime() (bool, time.Time, error) {
 	txn, dbis, err := s.startTxn(true, timeDB)
 	if err != nil {
-		Error("Error creating transaction: ", err)
-		return
+		Error("storage: error creating transaction:", err)
+		return false, time.Time{}, err
 	}
 	defer txn.Abort()
 
-	ok, t, err = s.innerNextTime(txn, dbis[0])
-	return
+	return s.innerNextTime(txn, dbis[0])
 }
 
-func (s *Storage) innerRemove(txn *mdb.Txn, dbis []mdb.DBI, uuid []byte) (err error) {
+func (s *Storage) innerRemove(txn *mdb.Txn, dbis []mdb.DBI, uuid []byte) error {
 	be, err := txn.Get(dbis[1], uuid)
 	if err != nil {
-		Error("Could not read entry: ", err)
-		return
+		Error("storage: could not read entry:", err)
+		return err
 	}
 
 	e, err := entryFromBytes(be)
 	if err != nil {
-		Error("Could not parse entry: ", err)
-		return
+		Error("storage: could not parse entry:", err)
+		return err
 	}
 
 	k := uint64ToBytes(uint64(e.SendAt.UnixNano()))
-	err = txn.Del(dbis[0], k, uuid)
-	if err != nil {
-		Error("Could not delete from time series: ", err)
-		return
+	if err := txn.Del(dbis[0], k, uuid); err != nil {
+		Error("storage: could not delete from time series:", err)
+		return err
 	}
 
-	err = txn.Del(dbis[1], uuid, nil)
-	if err != nil {
-		Error("Could not delete entry: ", err)
-		return
+	if err := txn.Del(dbis[1], uuid, nil); err != nil {
+		Error("storage: could not delete entry:", err)
+		return err
 	}
 
 	// check if the key exists before deleting.
 	cursor, err := txn.CursorOpen(dbis[2])
 	if err != nil {
-		Error("Error getting cursor for keys: ", err)
-		return
+		Error("storage: error getting cursor for keys:", err)
+		return err
 	}
 	defer cursor.Close()
 
 	if e.Key == "" {
-		return
+		return nil
 	}
 
 	_, _, err = cursor.Get([]byte(e.Key), mdb.FIRST)
 	if err == mdb.NotFound {
-		err = nil
-		return
-	} else if err != nil {
-		Error("Error reading cursor: ", err)
-		return
+		return nil
+	}
+	if err != nil {
+		Error("storage: error reading cursor:", err)
+		return err
 	}
 
 	err = txn.Del(dbis[2], []byte(e.Key), nil)
 	if err != nil {
-		Error("Could not delete from keys: ", err)
-		return
+		Error("storage: could not delete from keys:", err)
 	}
-
-	return
+	return err
 }
 
 // Remove an emitted entry from the db. uuid is the Entry's UUID.
-func (s *Storage) Remove(uuid []byte) (err error) {
+func (s *Storage) Remove(uuid []byte) error {
 	txn, dbis, err := s.startTxn(false, timeDB, entryDB, keyDB)
 	if err != nil {
-		return
+		return err
 	}
 
-	err = s.innerRemove(txn, dbis, uuid)
-	if err != nil {
+	if err = s.innerRemove(txn, dbis, uuid); err != nil {
 		txn.Abort()
-		return
+		return err
 	}
 
 	ok, t, err := s.innerNextTime(txn, dbis[0])
 	if err != nil {
 		txn.Abort()
-		return
+		return err
 	}
 
 	err = txn.Commit()
-
 	if err == nil && ok {
 		s.c <- t
 	}
-
-	return
+	return err
 }

@@ -1,0 +1,32 @@
+# default configuration for docker container
+
+# data_dir should be a volume
+data_dir = "/var/lib/delayd"
+
+# all logs should go stdout
+log_dir = ""
+
+[raft]
+single_node = true
+
+[amqp]
+url = "amqp://localhost"
+qos = 10
+
+[amqp.exchange]
+name = "delayd"
+kind = "topic"
+durable = true
+auto_delete = false
+internal = false
+noWait = false
+
+[amqp.queue]
+name = "delayd"
+bind = [ "delayd" ]
+durable = true
+auto_ack = false
+exclusive = false
+no_local = false
+no_wait = false
+auto_delete = false

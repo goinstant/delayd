@@ -1,4 +1,4 @@
-package main
+package delayd
 
 import (
 	"bytes"
@@ -51,7 +51,7 @@ func TestApplyAddsEntry(t *testing.T) {
 	assert.Nil(t, err)
 	defer s.Close()
 
-	e := Entry{
+	e := &Entry{
 		Target: "something",
 		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
 	}
@@ -73,7 +73,7 @@ func TestApplyAddsMultipleEntries(t *testing.T) {
 	assert.Nil(t, err)
 	defer s.Close()
 
-	e := Entry{
+	e := &Entry{
 		Target: "something",
 		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
 	}
@@ -98,7 +98,7 @@ func TestRemove(t *testing.T) {
 	assert.Nil(t, err)
 	defer s.Close()
 
-	e := Entry{
+	e := &Entry{
 		Target: "something",
 		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
 	}
@@ -136,7 +136,7 @@ func TestFSMSnapshotReapplies(t *testing.T) {
 	assert.Nil(t, err)
 	defer s.Close()
 
-	e := Entry{
+	e := &Entry{
 		Target: "something",
 		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
 	}

@@ -1,8 +1,5 @@
 *.sw?
-
-delayd
 coverage.out
-
-msg.json
-tests/out.txt
 .DS_Store
+delayd.toml
+delayd.toml.local

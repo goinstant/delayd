@@ -1,10 +1,11 @@
-package main
+package delayd
 
 import (
 	"sync"
 	"time"
 )
 
+const tickDuration = 3 * time.Second
 const twentyFourHours = time.Duration(24) * time.Hour
 
 // SendFunc is called by the timer every time the timer lapses.
@@ -13,31 +14,31 @@ type SendFunc func(time.Time)
 // Timer handles triggering event emission, and coordination between Storage
 // and the Sender
 type Timer struct {
-	Shutdown
-
+	shutdown     chan bool
+	tickCh       chan time.Time
 	timerRunning bool
 	timer        *time.Timer
+	ticker       *time.Ticker
 	nextSend     time.Time
-	m            *sync.Mutex
-
-	sendFunc SendFunc
+	mu           sync.Mutex
+	sendFunc     SendFunc
 }
 
 // NewTimer creates a new timer instance, and starts its main loop
-func NewTimer(sendFunc SendFunc) (t *Timer) {
-	t = new(Timer)
+func NewTimer(sendFunc SendFunc) *Timer {
+	t := &Timer{
+		timer:    time.NewTimer(twentyFourHours),
+		ticker:   time.NewTicker(tickDuration),
+		tickCh:   make(chan time.Time),
+		nextSend: time.Now().Add(twentyFourHours),
+		sendFunc: sendFunc,
+		shutdown: make(chan bool),
+	}
 
-	t.timerRunning = false
-	t.timer = time.NewTimer(twentyFourHours)
-	t.nextSend = time.Now().Add(twentyFourHours)
-	t.m = new(sync.Mutex)
-
-	t.sendFunc = sendFunc
-	t.shutdown = make(chan bool)
-
+	go t.tickerLoop()
 	go t.timerLoop()
 
-	return
+	return t
 }
 
 // Stop gracefully stops the timer, ensuring any running processing is complete.
@@ -48,30 +49,53 @@ func (t *Timer) Stop() {
 
 // Reset resets the timer to nextSend, if the timer is not running, or if nextSend is before
 // the current scheduled send.
-func (t *Timer) Reset(nextSend time.Time, force bool) {
-	t.m.Lock()
-	defer t.m.Unlock()
+func (t *Timer) Reset(resetTo time.Time, force bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 
-	if nextSend.Before(time.Now()) {
-		nextSend = time.Now()
+	n := time.Now()
+
+	nextSend := resetTo
+	if resetTo.Before(n) {
+		nextSend = n
 	}
 
-	if !force && t.timerRunning && nextSend.After(t.nextSend) {
-		return
-	}
+	Debugf("timer: next: %s, t.next: %s, now: %s, resetTo: %s", nextSend, t.nextSend, n, resetTo)
+	if force || !t.timerRunning || !nextSend.After(t.nextSend) {
+		d := nextSend.Sub(n)
+		if nextSend.Equal(n) {
+			Debug("timer: flusing a timer immediately", n)
+			t.tickCh <- n
+			Debug("timer: flushed a timer", n)
+			return
+		}
 
-	Debug("Timer reset to", nextSend)
-	t.timerRunning = true
-	t.timer.Reset(nextSend.Sub(time.Now()))
-	t.nextSend = nextSend
+		Debugf("timer: reset to %s, %s later", nextSend, d)
+		t.timerRunning = true
+		t.timer.Reset(d)
+		t.nextSend = nextSend
+	}
 }
 
 // Pause the timer, stopping any existing timeouts
 func (t *Timer) Pause() {
-	t.m.Lock()
-	defer t.m.Unlock()
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	t.timerRunning = false
 	t.timer.Stop()
+}
+
+func (t *Timer) tickerLoop() {
+	for {
+		select {
+		case <-t.shutdown:
+			return
+		case sendTime := <-t.ticker.C:
+			Debug("timer: received from ticker:", sendTime)
+			t.tickCh <- sendTime
+			Debug("timer: sent from ticker:", sendTime)
+		}
+	}
 }
 
 func (t *Timer) timerLoop() {
@@ -79,9 +103,15 @@ func (t *Timer) timerLoop() {
 		select {
 		case <-t.shutdown:
 			return
+		case sendTime := <-t.tickCh:
+			Debug("timer: received from tickCh:", sendTime)
+			t.sendFunc(sendTime)
+			Debug("timer: sent from tickCh:", sendTime)
 		case sendTime := <-t.timer.C:
+			Debug("timer: received from timer:", sendTime)
 			t.Pause()
 			t.sendFunc(sendTime)
+			Debug("timer: sent from timer:", sendTime)
 		}
 	}
 }

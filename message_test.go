@@ -1,4 +1,4 @@
-package main
+package delayd
 
 import (
 	"testing"
@@ -8,7 +8,7 @@ import (
 )
 
 func TestEntryToBytes(t *testing.T) {
-	e := Entry{
+	e := &Entry{
 		SendAt: time.Now(),
 	}
 

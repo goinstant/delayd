@@ -1,6 +1,7 @@
-package main
+package delayd
 
 import (
+	"errors"
 	"sync"
 	"time"
 
@@ -9,243 +10,302 @@ import (
 
 const consumerTag = "delayd-"
 
-// Shutdown is a base class that is inheritable by any other class that may want
-// to send a shutdown signal over a channel
-type Shutdown struct {
-	shutdown chan bool
+// AMQP manages amqp a connection and channel.
+type AMQP struct {
+	Channel    *amqp.Channel
+	Connection *amqp.Connection
 }
 
-// AmqpBase is the base class for amqp senders and recievers, containing the
-// startup and shutdown logic.
-type AmqpBase struct {
-	Shutdown
+// NewAMQP connects to url and opens a communication channel and  it returns
+// initialized AMQP instance.
+func NewAMQP(url string) (*AMQP, error) {
+	conn, err := amqp.Dial(url)
+	if err != nil {
+		return nil, err
+	}
 
-	connection *amqp.Connection
-	channel    *amqp.Channel
+	ch, err := conn.Channel()
+	if err != nil {
+		return nil, err
+	}
+
+	return &AMQP{
+		Connection: conn,
+		Channel:    ch,
+	}, nil
 }
 
-// Close the connection to amqp gracefully. Subclasses should ensure they finish
+// Close the connection to amqp gracefully. A caller should ensure they finish
 // all in-flight processing.
-func (a AmqpBase) Close() {
-	a.channel.Close()
-	a.connection.Close()
+func (a *AMQP) Close() {
+	a.Channel.Close()
+	a.Connection.Close()
 }
 
-// Connect to AMQP, and open a communication channel.
-func (a *AmqpBase) dial(amqpURL string) (err error) {
-	a.connection, err = amqp.Dial(amqpURL)
-	if err != nil {
-		Error("Could not connect to AMQP: ", err)
-		return
-	}
+// AMQPConsumer represents general AMQP consumer.
+type AMQPConsumer struct {
+	*AMQP
 
-	a.channel, err = a.connection.Channel()
-	if err != nil {
-		Error("Could not open AMQP channel: ", err)
-		return
-	}
-
-	return
+	Config AMQPConfig
+	Queue  amqp.Queue
 }
 
-// AmqpReceiver receives delayd commands over amqp
-type AmqpReceiver struct {
-	AmqpBase
-	C            <-chan EntryWrapper
+// NewAMQPConsumer creates a consumer for AMQP and returns a AMQPConsumer instance.
+func NewAMQPConsumer(config AMQPConfig, rk string) (*AMQPConsumer, error) {
+	a, err := NewAMQP(config.URL)
+	if err != nil {
+		return nil, err
+	}
+
+	Debug("amqp: setting channel QoS to", config.Qos)
+	if err := a.Channel.Qos(config.Qos, 0, false); err != nil {
+		return nil, err
+	}
+
+	e := config.Exchange
+	if err := a.Channel.ExchangeDeclare(
+		e.Name,
+		e.Kind,
+		e.Durable,
+		e.AutoDelete,
+		e.Internal,
+		e.NoWait,
+		nil,
+	); err != nil {
+		return nil, err
+	}
+
+	q := config.Queue
+	queue, err := a.Channel.QueueDeclare(
+		q.Name,
+		q.Durable,
+		q.AutoDelete,
+		q.Exclusive,
+		q.NoWait,
+		nil,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, exch := range config.Queue.Bind {
+		if err := a.Channel.QueueBind(queue.Name, rk, exch, q.NoWait, nil); err != nil {
+			return nil, err
+		}
+		Debugf("amqp: binded queue %s to exchange %s with routing key %s", queue.Name, exch, rk)
+	}
+
+	return &AMQPConsumer{
+		AMQP:   a,
+		Config: config,
+		Queue:  queue,
+	}, nil
+}
+
+// AMQPReceiver receives delayd commands over amqp
+type AMQPReceiver struct {
+	*AMQPConsumer
+
+	c            chan Message
+	shutdown     chan bool
 	metaMessages chan (<-chan amqp.Delivery)
+	messages     chan amqp.Delivery
 	paused       bool
-
-	tagCount uint
-
-	ac AmqpConfig
-	m  *sync.Mutex
+	tagCount     uint
+	ac           AMQPConfig
+	mu           sync.Mutex
 }
 
-// Close overwrites the base class close because we need to do some additional
-// work for the receiver (signalling the shutdown channel)
-func (a AmqpReceiver) Close() {
-	a.Pause()
-	a.shutdown <- true
-	a.AmqpBase.Close()
-}
-
-// NewAmqpReceiver creates a new AmqpReceiver based on the provided AmqpConfig,
+// NewAMQPReceiver creates a new Receiver based on the provided Config,
 // and starts it listening for commands.
-func NewAmqpReceiver(ac AmqpConfig) (receiver *AmqpReceiver, err error) {
-	receiver = new(AmqpReceiver)
-	receiver.ac = ac
-	receiver.paused = true
-	receiver.tagCount = 0
-	receiver.m = new(sync.Mutex)
-
-	err = receiver.dial(ac.URL)
+func NewAMQPReceiver(ac AMQPConfig, routingKey string) (*AMQPReceiver, error) {
+	a, err := NewAMQPConsumer(ac, routingKey)
 	if err != nil {
-		return
+		return nil, err
 	}
 
-	Debug("Setting channel QoS to", ac.Qos)
-	err = receiver.channel.Qos(ac.Qos, 0, false)
-	if err != nil {
-		return
+	receiver := &AMQPReceiver{
+		AMQPConsumer: a,
+
+		c:            make(chan Message),
+		messages:     make(chan amqp.Delivery, ac.Qos),
+		metaMessages: make(chan (<-chan amqp.Delivery)),
+		ac:           ac,
+		paused:       true,
+		shutdown:     make(chan bool),
 	}
 
-	err = receiver.channel.ExchangeDeclare(ac.Exchange.Name, ac.Exchange.Kind, ac.Exchange.Durable, ac.Exchange.AutoDelete, ac.Exchange.Internal, ac.Exchange.NoWait, nil)
-	if err != nil {
-		Error("Could not declare AMQP Exchange: ", err)
-		return
-	}
+	go receiver.monitorChannel()
+	go receiver.messageLoop()
 
-	queue, err := receiver.channel.QueueDeclare(ac.Queue.Name, ac.Queue.Durable, ac.Queue.AutoDelete, ac.Queue.Exclusive, ac.Queue.NoWait, nil)
-	if err != nil {
-		Error("Could not declare AMQP Queue: ", err)
-		return
-	}
+	return receiver, nil
+}
 
-	for _, exch := range ac.Queue.Bind {
-		Debugf("Binding queue %s to exchange %s", queue.Name, exch)
-		err = receiver.channel.QueueBind(queue.Name, "delayd", exch, ac.Queue.NoWait, nil)
-		if err != nil {
-			// XXX un-fatal this like the other errors
-			Fatalf("Error binding queue %s to Exchange %s", queue.Name, exch)
-		}
-	}
-
-	c := make(chan EntryWrapper)
-	receiver.C = c
-	receiver.shutdown = make(chan bool)
-
-	// messages is a proxy that wraps the 'real' channel, which will be closed
-	// and opened on pause/resume
-	messages := make(chan amqp.Delivery, ac.Qos)
-	receiver.metaMessages = make(chan (<-chan amqp.Delivery))
-	go func() {
-		var realMessages <-chan amqp.Delivery
-		for {
-			select {
-			case m := <-receiver.metaMessages:
-				// we have a new source of 'real' messages. swap it in.
-				Debug("Installing new amqp channel")
-				realMessages = m
-			case msg, ok := <-realMessages:
-				// Don't propagate any channel close messages
-				if ok {
-					messages <- msg
-				}
+// monitorChannel monitors metaMessages channel.
+// It installs new channel when metaMessages channel returns a channel
+func (a *AMQPReceiver) monitorChannel() {
+	var realMessages <-chan amqp.Delivery
+	for {
+		select {
+		case <-a.shutdown:
+			Debug("amqp: received signal to quit reading amqp, exiting goroutine")
+			return
+		case m := <-a.metaMessages:
+			// we have a new source of 'real' messages. swap it in.
+			realMessages = m
+			Debug("amqp: new amqp channel is installed")
+		case msg, ok := <-realMessages:
+			// Don't propagate any channel close messages
+			if ok {
+				a.messages <- msg
 			}
 		}
-	}()
+	}
+}
 
-	go func() {
-		for {
-			select {
-			case <-receiver.shutdown:
-				Debug("received signal to quit reading amqp, exiting goroutine")
-				return
-			case msg := <-messages:
-				entry := Entry{}
+func (a *AMQPReceiver) messageLoop() {
+	for {
+		select {
+		case <-a.shutdown:
+			Debug("amqp: received signal to quit reading amqp, exiting goroutine")
+			return
+		case delivery := <-a.messages:
+			deliverer := &AMQPDeliverer{Delivery: delivery}
 
-				eWrapper := EntryWrapper{Msg: msg}
-
-				var delay int64
-				switch val := msg.Headers["delayd-delay"].(type) {
-				case int32:
-					delay = int64(val)
-				case int64:
-					delay = val
-				default:
-					Warn(msg)
-					Warn("Bad/missing delay. discarding message")
-					eWrapper.Done(true)
-				}
-				entry.SendAt = time.Now().Add(time.Duration(delay) * time.Millisecond)
-
-				var ok bool
-				entry.Target, ok = msg.Headers["delayd-target"].(string)
-				if !ok {
-					Warn("Bad/missing target. discarding message")
-					eWrapper.Done(true)
-					continue
-				}
-
-				// optional key value for overwrite
-				h, ok := msg.Headers["delayd-key"].(string)
-				if ok {
-					entry.Key = h
-				}
-
-				// optional headers that will be relayed
-				entry.ContentType = msg.ContentType
-				entry.ContentEncoding = msg.ContentEncoding
-				entry.CorrelationID = msg.CorrelationId
-
-				entry.Body = msg.Body
-				eWrapper.Entry = entry
-
-				c <- eWrapper
+			var delay int64
+			switch val := delivery.Headers["delayd-delay"].(type) {
+			case int32:
+				delay = int64(val)
+			case int64:
+				delay = val
+			default:
+				Warn(delivery)
+				Warn("amqp: bad/missing delay. discarding message")
+				deliverer.Ack()
+				continue
 			}
-		}
-	}()
 
-	return
+			entry := &Entry{
+				SendAt: time.Now().Add(time.Duration(delay) * time.Millisecond),
+			}
+
+			target, found := delivery.Headers["delayd-target"].(string)
+			if !found {
+				Warn("amqp: bad/missing target. discarding message")
+				deliverer.Ack()
+				continue
+			}
+			entry.Target = target
+
+			// optional key value for overwrite
+			if k, ok := delivery.Headers["delayd-key"].(string); ok {
+				entry.Key = k
+			}
+
+			// optional headers that will be relayed
+			entry.AMQP = &AMQPMessage{
+				ContentType:     delivery.ContentType,
+				ContentEncoding: delivery.ContentEncoding,
+				CorrelationID:   delivery.CorrelationId,
+			}
+
+			entry.Body = delivery.Body
+			msg := Message{
+				Entry: entry,
+				MessageDeliverer: &AMQPDeliverer{
+					Delivery: delivery,
+				},
+			}
+			a.c <- msg
+		}
+	}
+}
+
+// MessageCh returns a receiving-only channel returns Message
+func (a *AMQPReceiver) MessageCh() <-chan Message {
+	return a.c
+}
+
+// Close pauses the receiver and signals the shutdown channel.
+// Finally, it closes AMQP the channel and connection.
+// FIXME: Is this still restartable?
+func (a *AMQPReceiver) Close() {
+	a.Pause()
+	close(a.shutdown)
+	close(a.c)
+	a.AMQP.Close()
 }
 
 // Start or restart listening for messages on the queue
-func (a AmqpReceiver) Start() (err error) {
-	a.m.Lock()
-	defer a.m.Unlock()
+func (a *AMQPReceiver) Start() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	if !a.paused {
-		return
+		// FIXME: already started?
+		return nil
+	}
+
+	m, err := a.Channel.Consume(
+		a.ac.Queue.Name,
+		consumerTag+string(a.tagCount),
+		a.ac.Queue.AutoAck,
+		a.ac.Queue.Exclusive,
+		a.ac.Queue.NoLocal,
+		a.ac.Queue.NoWait,
+		nil,
+	)
+	if err != nil {
+		return err
 	}
 
 	a.paused = false
 	a.tagCount++
-	m, err := a.channel.Consume(a.ac.Queue.Name, consumerTag+string(a.tagCount), a.ac.Queue.AutoAck, a.ac.Queue.Exclusive, a.ac.Queue.NoLocal, a.ac.Queue.NoWait, nil)
+
+	// Install new channel
 	a.metaMessages <- m
-	return
+	return err
 }
 
 // Pause listening for messages on the queue
-func (a AmqpReceiver) Pause() error {
-	a.m.Lock()
-	defer a.m.Unlock()
+func (a *AMQPReceiver) Pause() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	if a.paused {
 		return nil
 	}
 	a.paused = true
-	return a.channel.Cancel(consumerTag+string(a.tagCount), false)
+	return a.Channel.Cancel(consumerTag+string(a.tagCount), false)
 }
 
-// AmqpSender sends delayd entries over amqp after their timeout
-type AmqpSender struct {
-	AmqpBase
-
-	C chan<- EntryWrapper
+// AMQPSender sends delayd entries over amqp after their timeout
+type AMQPSender struct {
+	*AMQP
 }
 
-// NewAmqpSender creates a new AmqpSender connected to the given AMQP URL.
-func NewAmqpSender(amqpURL string) (sender *AmqpSender, err error) {
-	sender = new(AmqpSender)
-
-	err = sender.dial(amqpURL)
+// NewAMQPSender creates a new Sender connected to the given  URL.
+func NewAMQPSender(amqpURL string) (*AMQPSender, error) {
+	a, err := NewAMQP(amqpURL)
 	if err != nil {
-		return
+		return nil, err
 	}
 
-	return
+	return &AMQPSender{AMQP: a}, nil
 }
 
-// Send sends a delayd entry over AMQP, using the entry's Target as the publish
+// Send sends a delayd entry over , using the entry's Target as the publish
 // exchange.
-func (s AmqpSender) Send(e Entry) (err error) {
+func (s *AMQPSender) Send(e *Entry) error {
+	if e.AMQP == nil {
+		return errors.New("amqp: invalid entry")
+	}
+
 	msg := amqp.Publishing{
 		DeliveryMode:    amqp.Persistent,
 		Timestamp:       time.Now(),
-		ContentType:     e.ContentType,
-		ContentEncoding: e.ContentEncoding,
-		CorrelationId:   e.CorrelationID,
+		ContentType:     e.AMQP.ContentType,
+		ContentEncoding: e.AMQP.ContentEncoding,
+		CorrelationId:   e.AMQP.CorrelationID,
 		Body:            e.Body,
 	}
-
-	err = s.channel.Publish(e.Target, "", true, false, msg)
-	return
+	return s.Channel.Publish(e.Target, "", true, false, msg)
 }

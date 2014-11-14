@@ -1,11 +1,12 @@
-package main
+package delayd
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
-	"path"
+	"path/filepath"
 	"time"
 
 	"github.com/hashicorp/raft"
@@ -38,33 +39,32 @@ type FSM struct {
 func (fsm *FSM) Apply(l *raft.Log) interface{} {
 	logVer := l.Data[0]
 	if logVer != logSchemaVersion {
-		Panicf("Unknown log schema version seen. version=%d", logVer)
+		Panicf("raft: unknown log schema version seen. version=%d", logVer)
 	}
 
 	cmdType := l.Data[1]
-	switch cmdType {
-	case byte(addCmd):
-		Debug("Applying add command")
+	switch Command(cmdType) {
+	case addCmd:
+		Debug("raft: applying add command")
 
 		uuid := l.Data[uuidOffset:entryOffset]
-
 		entry, err := entryFromBytes(l.Data[entryOffset:])
 		if err != nil {
-			Panic("Error decoding entry: ", err)
+			Panic("raft: error decoding entry:", err)
 		}
 
-		err = fsm.store.Add(uuid, entry)
-		if err != nil {
-			Error("Error storing entry: ", err)
+		if err := fsm.store.Add(uuid, entry); err != nil {
+			Error("raft: failed to add entry:", err)
+			return err
 		}
-	case byte(rmCmd):
-		Debug("Applying rm command")
-		err := fsm.store.Remove(l.Data[2:])
-		if err != nil {
-			Error("Error removing entry: ", err)
+	case rmCmd:
+		Debug("raft: applying rm command")
+		if err := fsm.store.Remove(l.Data[2:]); err != nil {
+			Error("raft: failed to rm entry:", err)
+			return err
 		}
 	default:
-		Panicf("Unknown command type seen. type=%d", cmdType)
+		Panicf("raft: unknown command type seen. type=%d", cmdType)
 	}
 
 	return nil
@@ -73,8 +73,7 @@ func (fsm *FSM) Apply(l *raft.Log) interface{} {
 // Snapshot creates a raft snapshot for fast restore.
 func (fsm *FSM) Snapshot() (raft.FSMSnapshot, error) {
 	uuids, entries, err := fsm.store.GetAll()
-	snapshot := &Snapshot{uuids, entries}
-	return snapshot, err
+	return &Snapshot{uuids, entries}, err
 }
 
 // Restore from a raft snapshot
@@ -95,9 +94,7 @@ func (fsm *FSM) Restore(snap io.ReadCloser) error {
 	b := make([]byte, 1)
 	_, err = snap.Read(b)
 	if b[0] != byte(snapSchemaVersion) {
-		msg := "Unknown snapshot schema version"
-		Error(msg)
-		return errors.New(msg)
+		return errors.New("raft: unknown snapshot schema version")
 	}
 
 	uuid := make([]byte, 16)
@@ -108,18 +105,17 @@ func (fsm *FSM) Restore(snap io.ReadCloser) error {
 		_, err = snap.Read(uuid)
 		if err == io.EOF {
 			break
-		} else if err != nil {
+		}
+		if err != nil {
 			return err
 		}
 
-		_, err = snap.Read(size)
-		if err != nil {
+		if _, err := snap.Read(size); err != nil {
 			return err
 		}
 
 		eb := make([]byte, bytesToUint32(size))
-		_, err = snap.Read(eb)
-		if err != nil {
+		if _, err := snap.Read(eb); err != nil {
 			return err
 		}
 
@@ -128,35 +124,32 @@ func (fsm *FSM) Restore(snap io.ReadCloser) error {
 			return err
 		}
 
-		err = s.Add(uuid, e)
-		if err != nil {
+		if err := s.Add(uuid, e); err != nil {
 			return err
 		}
 
 		count++
 	}
 
-	Debugf("Restored snapshot. entries=%d", count)
+	Debugf("raft: restored snapshot. entries=%d", count)
 	return nil
 }
 
 // Snapshot holds the data needed to serialize storage
 type Snapshot struct {
 	uuids   [][]byte
-	entries []Entry
+	entries []*Entry
 }
 
 // Persist writes a snapshot to a file. We just serialize all active entries.
 func (s *Snapshot) Persist(sink raft.SnapshotSink) error {
-	_, err := sink.Write([]byte{snapSchemaVersion})
-	if err != nil {
+	if _, err := sink.Write([]byte{snapSchemaVersion}); err != nil {
 		sink.Cancel()
 		return err
 	}
 
 	for i, e := range s.entries {
-		_, err = sink.Write(s.uuids[i])
-		if err != nil {
+		if _, err := sink.Write(s.uuids[i]); err != nil {
 			sink.Cancel()
 			return err
 		}
@@ -167,14 +160,12 @@ func (s *Snapshot) Persist(sink raft.SnapshotSink) error {
 			return err
 		}
 
-		_, err = sink.Write(uint32ToBytes(uint32(len(b))))
-		if err != nil {
+		if _, err := sink.Write(uint32ToBytes(uint32(len(b)))); err != nil {
 			sink.Cancel()
 			return err
 		}
 
-		_, err = sink.Write(b)
-		if err != nil {
+		if _, err := sink.Write(b); err != nil {
 			sink.Cancel()
 			return err
 		}
@@ -196,66 +187,61 @@ type Raft struct {
 }
 
 // NewRaft creates a new Raft instance. raft data is stored under the raft dir in prefix.
-func NewRaft(c RaftConfig, prefix string, logDir string) (r *Raft, err error) {
-	r = new(Raft)
-
+func NewRaft(c RaftConfig, prefix string, logDir string) (*Raft, error) {
 	config := raft.DefaultConfig()
 	config.EnableSingleNode = c.Single
 
-	var logOutput *os.File
-	if logDir != "\n" {
-		logFile := path.Join(logDir, "raft.log")
-		logOutput, err = os.OpenFile(logFile, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0666)
+	if len(logDir) > 0 {
+		logFile := filepath.Join(logDir, "raft.log")
+		logOutput, err := os.OpenFile(logFile, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0666)
 		if err != nil {
-			Fatal("Could not open raft log file: ", err)
+			return nil, err
 		}
 
 		config.LogOutput = logOutput
 	}
 
-	raftDir := path.Join(prefix, "raft")
-	err = os.MkdirAll(raftDir, 0755)
-	if err != nil {
-		Fatal("Could not create raft storage dir: ", err)
+	raftDir := filepath.Join(prefix, "raft")
+	if err := os.MkdirAll(raftDir, 0755); err != nil {
+		return nil, fmt.Errorf("raft: could not create raft storage dir: %s", err)
 	}
 
 	fss, err := raft.NewFileSnapshotStore(raftDir, 1, nil)
 	if err != nil {
-		Error("Could not initialize raft snapshot store: ", err)
-		return
+		Error("raft: could not initialize raft snapshot store:", err)
+		return nil, err
 	}
 
 	// this should be our externally visible address. If not provided in the
 	// config as 'advertise', we use the address of the listen config.
-	if c.Advertise == nil {
-		c.Advertise = &c.Listen
+	if c.Advertise == "" {
+		c.Advertise = c.Listen
 	}
 
-	a, err := net.ResolveTCPAddr("tcp", *c.Advertise)
+	a, err := net.ResolveTCPAddr("tcp", c.Advertise)
 	if err != nil {
-		Error("Could not lookup raft advertise address: ", err)
-		return
+		Error("raft: could not lookup raft advertise address:", err)
+		return nil, err
 	}
 
-	r.transport, err = raft.NewTCPTransport(c.Listen, a, 3, 10*time.Second, nil)
+	transport, err := raft.NewTCPTransport(c.Listen, a, 3, 10*time.Second, nil)
 	if err != nil {
-		Error("Could not create raft transport: ", err)
-		return
+		Error("raft: could not create raft transport:", err)
+		return nil, err
 	}
 
-	peerStore := raft.NewJSONPeers(raftDir, r.transport)
+	peerStore := raft.NewJSONPeers(raftDir, transport)
 
 	if !c.Single {
-		var peers []net.Addr
-		peers, err = peerStore.Peers()
+		peers, err := peerStore.Peers()
 		if err != nil {
-			return
+			return nil, err
 		}
 
 		for _, peerStr := range c.Peers {
 			peer, err := net.ResolveTCPAddr("tcp", peerStr)
 			if err != nil {
-				Fatal("Bad peer:", err)
+				Fatal("raft: bad peer:", err)
 			}
 
 			if !raft.PeerContained(peers, peer) {
@@ -263,29 +249,34 @@ func NewRaft(c RaftConfig, prefix string, logDir string) (r *Raft, err error) {
 			}
 		}
 	} else {
-		Warn("Running in single node permitted mode. Only use this for testing!")
+		Warn("raft: running in single node permitted mode. only use this for testing!")
 	}
 
-	r.mdb, err = raftmdb.NewMDBStore(raftDir)
+	mdb, err := raftmdb.NewMDBStore(raftDir)
 	if err != nil {
-		Error("Could not create raft store:", err)
-		return
+		Error("raft: could not create raft store:", err)
+		return nil, err
 	}
 
 	storage, err := NewStorage()
 	if err != nil {
-		Error("Could not create storage:", err)
-		return
+		Error("raft: could not create storage:", err)
+		return nil, err
 	}
-	r.fsm = &FSM{storage}
+	fsm := &FSM{storage}
 
-	r.raft, err = raft.NewRaft(config, r.fsm, r.mdb, r.mdb, fss, peerStore, r.transport)
+	raft, err := raft.NewRaft(config, fsm, mdb, mdb, fss, peerStore, transport)
 	if err != nil {
-		Error("Could not initialize raft: ", err)
-		return
+		Error("raft: could not initialize raft:", err)
+		return nil, err
 	}
 
-	return
+	return &Raft{
+		transport: transport,
+		mdb:       mdb,
+		fsm:       fsm,
+		raft:      raft,
+	}, nil
 }
 
 // Close cleanly shutsdown the raft instance.
@@ -293,7 +284,7 @@ func (r *Raft) Close() {
 	r.transport.Close()
 	future := r.raft.Shutdown()
 	if err := future.Error(); err != nil {
-		Error("Error shutting down raft: ", err)
+		Error("raft: error shutting down raft:", err)
 	}
 	r.mdb.Close()
 	r.fsm.store.Close()
@@ -310,7 +301,7 @@ func (r *Raft) Close() {
 func (r *Raft) Add(cmd []byte, timeout time.Duration) error {
 	uuid, err := newUUID()
 	if err != nil {
-		Panic("Could not generate entry UUID")
+		Panic("raft: could not generate entry UUID")
 	}
 
 	h := append([]byte{logSchemaVersion, byte(addCmd)}, uuid...)
