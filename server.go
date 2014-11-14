@@ -76,7 +76,7 @@ func (s *Server) Run() {
 			continue
 		}
 
-		Debug("server: got entry:", entry)
+		Debug("server: got new request entry:", entry)
 		b, err := entry.ToBytes()
 		if err != nil {
 			Error("server: error encoding entry: ", err)
@@ -165,6 +165,7 @@ func (s *Server) observeNextTime() {
 }
 
 func (s *Server) timerSend(t time.Time) {
+	// FIXME: In the case of error, we don't remove a log from raft log.
 	uuids, entries, err := s.raft.fsm.store.Get(t)
 	if err != nil {
 		Fatal("server: could not read entries from db:", err)
@@ -173,7 +174,8 @@ func (s *Server) timerSend(t time.Time) {
 	Infof("server: sending %d entries", len(entries))
 	if len(entries) < 1 {
 		// FIXME: if no entries found, timer is missing newest entries.........
-		Warn("server: timer is missing newest entries...")
+		_, entries, _ := s.raft.fsm.store.GetAll()
+		Warnf("server: timer is missing newest entries. total: %d", len(entries))
 	}
 
 	for i, e := range entries {
@@ -202,12 +204,12 @@ func (s *Server) timerSend(t time.Time) {
 	}
 
 	// ensure everyone is up to date
-	Debug("syncing raft after send.")
+	Debug("server: syncing raft after send.")
 	err = s.raft.SyncAll()
 	if err != nil {
 		Warn("server: lost raft leadership during sync after send.")
 		return
 	}
 
-	Debug("synced raft after send.")
+	Debug("server: synced raft after send.")
 }

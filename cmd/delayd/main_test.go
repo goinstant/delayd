@@ -136,7 +136,7 @@ func (c *TestAMQPClient) RecvLoop(quit <-chan struct{}) <-chan struct{} {
 		for {
 			select {
 			case <-quit:
-				delayd.Info("receiving quit. existing.")
+				delayd.Info("client: receiving quit. existing.")
 				return
 			case msg := <-c.deliveryCh:
 				fmt.Fprintf(c.out, "%s\n", msg.Body)

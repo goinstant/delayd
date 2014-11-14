@@ -154,7 +154,7 @@ func (s *Storage) Add(uuid []byte, e Entry) error {
 	}
 
 	if e.Key != "" {
-		Debug("Entry has key: ", e.Key)
+		Debug("storage: adding entry has key:", e.Key)
 
 		ouuid, err := txn.Get(dbis[2], []byte(e.Key))
 		if err != nil && err != mdb.NotFound {
@@ -163,7 +163,7 @@ func (s *Storage) Add(uuid []byte, e Entry) error {
 		}
 
 		if err == nil {
-			Debug("Exising key found; removing.")
+			Debug("storage: exising key found; removing.")
 
 			err := s.innerRemove(txn, dbis, ouuid)
 			if err != nil {

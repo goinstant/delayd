@@ -40,11 +40,11 @@ func installSigHandler(s stopable) {
 }
 
 func execute(c *cli.Context) {
-	delayd.Info("Starting delayd")
+	delayd.Info("cli: starting delayd")
 
 	config, err := loadConfig(c.String("config"))
 	if err != nil {
-		delayd.Fatal("Unable to read config file: ", err)
+		delayd.Fatal("cli: unable to read config file: ", err)
 	}
 
 	s, err := delayd.NewServer(config)

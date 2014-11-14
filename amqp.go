@@ -57,7 +57,7 @@ func NewAMQPConsumer(config AMQPConfig, rk string) (*AMQPConsumer, error) {
 		return nil, err
 	}
 
-	Debug("Setting channel QoS to", config.Qos)
+	Debug("amqp: setting channel QoS to", config.Qos)
 	if err := a.Channel.Qos(config.Qos, 0, false); err != nil {
 		return nil, err
 	}
@@ -92,7 +92,7 @@ func NewAMQPConsumer(config AMQPConfig, rk string) (*AMQPConsumer, error) {
 		if err := a.Channel.QueueBind(queue.Name, rk, exch, q.NoWait, nil); err != nil {
 			return nil, err
 		}
-		Debugf("Binded queue %s to exchange %s with routing key %s", queue.Name, exch, rk)
+		Debugf("amqp: binded queue %s to exchange %s with routing key %s", queue.Name, exch, rk)
 	}
 
 	return &AMQPConsumer{
@@ -148,12 +148,12 @@ func (a *AMQPReceiver) monitorChannel() {
 	for {
 		select {
 		case <-a.shutdown:
-			Debug("received signal to quit reading amqp, exiting goroutine")
+			Debug("amqp: received signal to quit reading amqp, exiting goroutine")
 			return
 		case m := <-a.metaMessages:
 			// we have a new source of 'real' messages. swap it in.
 			realMessages = m
-			Debug("new amqp channel is installed")
+			Debug("amqp: new amqp channel is installed")
 		case msg, ok := <-realMessages:
 			// Don't propagate any channel close messages
 			if ok {
@@ -167,7 +167,7 @@ func (a *AMQPReceiver) messageLoop() {
 	for {
 		select {
 		case <-a.shutdown:
-			Debug("received signal to quit reading amqp, exiting goroutine")
+			Debug("amqp: received signal to quit reading amqp, exiting goroutine")
 			return
 		case delivery := <-a.messages:
 			deliverer := &AMQPDeliverer{Delivery: delivery}
@@ -180,7 +180,7 @@ func (a *AMQPReceiver) messageLoop() {
 				delay = val
 			default:
 				Warn(delivery)
-				Warn("Bad/missing delay. discarding message")
+				Warn("amqp: bad/missing delay. discarding message")
 				deliverer.Ack()
 				continue
 			}
@@ -191,7 +191,7 @@ func (a *AMQPReceiver) messageLoop() {
 
 			target, found := delivery.Headers["delayd-target"].(string)
 			if !found {
-				Warn("Bad/missing target. discarding message")
+				Warn("amqp: bad/missing target. discarding message")
 				deliverer.Ack()
 				continue
 			}
@@ -296,7 +296,7 @@ func NewAMQPSender(amqpURL string) (*AMQPSender, error) {
 // exchange.
 func (s *AMQPSender) Send(e Entry) error {
 	if e.AMQP == nil {
-		return errors.New("invalid entry")
+		return errors.New("amqp: invalid entry")
 	}
 
 	msg := amqp.Publishing{

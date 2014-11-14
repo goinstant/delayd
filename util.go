@@ -11,7 +11,7 @@ func newUUID() ([]byte, error) {
 	uuid := make([]byte, 16)
 	n, err := io.ReadFull(rand.Reader, uuid)
 	if n != len(uuid) {
-		return nil, errors.New("Could not create uuid")
+		return nil, errors.New("util: could not create uuid")
 	}
 	if err != nil {
 		return nil, err
