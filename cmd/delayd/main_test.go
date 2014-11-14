@@ -17,42 +17,6 @@ import (
 	"github.com/nabeken/delayd"
 )
 
-const (
-	unknownAsk = "unknown option asked for: "
-)
-
-type MockClientContext struct{}
-
-func (m MockClientContext) String(ask string) string {
-	switch ask {
-	case "target":
-		return "delayd-test"
-	case "key":
-		return "delayd-key"
-	case "file":
-		return "testdata/in.toml"
-	case "out":
-		return "testdata/out.txt"
-	case "config":
-		return "delayd.toml"
-	}
-
-	panic(unknownAsk + ask)
-}
-
-func (m MockClientContext) Bool(ask string) bool {
-	panic(unknownAsk + ask)
-}
-
-func (m MockClientContext) Int(ask string) int {
-	switch ask {
-	case "delay":
-		return 50
-	}
-
-	panic(unknownAsk + ask)
-}
-
 func getFileAsString(path string) string {
 	dat, err := ioutil.ReadFile(path)
 	if err != nil {
@@ -171,8 +135,7 @@ func TestInAndOut(t *testing.T) {
 
 	assert := assert.New(t)
 
-	m := MockClientContext{}
-	conf, err := loadConfig(m.String("config"))
+	conf, err := loadConfig("delayd.toml")
 
 	// create an ephemeral location for data storage during tests
 	conf.DataDir, err = ioutil.TempDir("", "delayd-testint")
@@ -189,16 +152,16 @@ func TestInAndOut(t *testing.T) {
 	go s.Run()
 	defer s.Stop()
 
-	out, err := os.OpenFile(m.String("out"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	out, err := os.OpenFile("testdata/out.txt", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer out.Close()
 
 	targetCfn := conf.AMQP
+	targetCfn.Exchange.Name = "delayd-test"
 	targetCfn.Queue.Name = ""
-	targetCfn.Queue.Bind = []string{m.String("target")}
-	targetCfn.Exchange.Name = m.String("target")
+	targetCfn.Queue.Bind = []string{targetCfn.Exchange.Name}
 	c, err := NewTestClient(targetCfn, conf.AMQP, out)
 	if err != nil {
 		t.Fatal(err)

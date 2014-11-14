@@ -14,20 +14,12 @@ import (
 // this is filled in at build time
 var version string
 
-type stopable interface {
+type Stopper interface {
 	Stop()
 }
 
-// Context is an interface for command line arguments context.  Useful for replacing the lib
-// when running a test
-type Context interface {
-	String(str string) string
-	Bool(str string) bool
-	Int(str string) int
-}
-
 // installSigHandler installs a signal handler to shutdown gracefully for ^C and kill
-func installSigHandler(s stopable) {
+func installSigHandler(s Stopper) {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
 	go func() {
@@ -44,7 +36,7 @@ func execute(c *cli.Context) {
 
 	config, err := loadConfig(c.String("config"))
 	if err != nil {
-		delayd.Fatal("cli: unable to read config file: ", err)
+		delayd.Fatal("cli: unable to read config file:", err)
 	}
 
 	s, err := delayd.NewServer(config)
