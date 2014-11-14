@@ -17,7 +17,7 @@ const routingKey = "delayd"
 // Server is the delayd server. It handles the server lifecycle (startup, clean shutdown)
 type Server struct {
 	sender     Sender
-	receiver   *AMQPReceiver
+	receiver   Receiver
 	raft       *Raft
 	timer      *Timer
 	shutdownCh chan bool
