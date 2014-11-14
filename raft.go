@@ -138,7 +138,7 @@ func (fsm *FSM) Restore(snap io.ReadCloser) error {
 // Snapshot holds the data needed to serialize storage
 type Snapshot struct {
 	uuids   [][]byte
-	entries []Entry
+	entries []*Entry
 }
 
 // Persist writes a snapshot to a file. We just serialize all active entries.

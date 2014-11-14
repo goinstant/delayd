@@ -13,7 +13,7 @@ var (
 	dummyUUID2, _ = newUUID()
 )
 
-func innerTestAdd(t *testing.T, e Entry) {
+func innerTestAdd(t *testing.T, e *Entry) {
 	s, err := NewStorage()
 	assert.Nil(t, err)
 	defer s.Close()
@@ -30,7 +30,7 @@ func innerTestAdd(t *testing.T, e Entry) {
 }
 
 func TestAddNoKey(t *testing.T) {
-	e := Entry{
+	e := &Entry{
 		Target: "something",
 		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
 	}
@@ -38,7 +38,7 @@ func TestAddNoKey(t *testing.T) {
 }
 
 func TestAddWithKey(t *testing.T) {
-	e := Entry{
+	e := &Entry{
 		Target: "something",
 		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
 		Key:    "user-key",
@@ -47,13 +47,13 @@ func TestAddWithKey(t *testing.T) {
 }
 
 func TestAddWithKeyReplacesExisting(t *testing.T) {
-	e := Entry{
+	e := &Entry{
 		Target: "something",
 		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
 		Key:    "user-key",
 	}
 
-	e2 := Entry{
+	e2 := &Entry{
 		Target: "something-else",
 		SendAt: time.Now().Add(time.Duration(110) * time.Minute),
 		Key:    "user-key",
@@ -78,7 +78,7 @@ func TestAddWithKeyReplacesExisting(t *testing.T) {
 	assert.Equal(t, entries[0], e2)
 }
 
-func assertContains(t *testing.T, l []Entry, i Entry) {
+func assertContains(t *testing.T, l []*Entry, i *Entry) {
 	v := reflect.ValueOf(i)
 
 	found := false
@@ -95,12 +95,12 @@ func assertContains(t *testing.T, l []Entry, i Entry) {
 }
 
 func TestAddSameTime(t *testing.T) {
-	e := Entry{
+	e := &Entry{
 		Target: "something",
 		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
 	}
 
-	e2 := Entry{
+	e2 := &Entry{
 		Target: "something-else",
 		SendAt: e.SendAt,
 	}
@@ -127,7 +127,7 @@ func TestAddSameTime(t *testing.T) {
 	assertContains(t, entries, e2)
 }
 
-func innerTestRemove(t *testing.T, e Entry) {
+func innerTestRemove(t *testing.T, e *Entry) {
 	s, err := NewStorage()
 	assert.Nil(t, err)
 	defer s.Close()
@@ -146,7 +146,7 @@ func innerTestRemove(t *testing.T, e Entry) {
 }
 
 func TestRemoveNoKey(t *testing.T) {
-	e := Entry{
+	e := &Entry{
 		Target: "something",
 		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
 	}
@@ -154,7 +154,7 @@ func TestRemoveNoKey(t *testing.T) {
 }
 
 func TestRemoveWithKey(t *testing.T) {
-	e := Entry{
+	e := &Entry{
 		Target: "something",
 		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
 		Key:    "user-key",
@@ -174,12 +174,12 @@ func TestRemoveEntryNotFound(t *testing.T) {
 }
 
 func TestRemoveSameTimeRemovesCorrectEntry(t *testing.T) {
-	e := Entry{
+	e := &Entry{
 		Target: "something",
 		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
 	}
 
-	e2 := Entry{
+	e2 := &Entry{
 		Target: "something-else",
 		SendAt: e.SendAt,
 	}
@@ -211,7 +211,7 @@ func TestNextTime(t *testing.T) {
 	assert.Nil(t, err)
 	defer s.Close()
 
-	e := Entry{
+	e := &Entry{
 		Target: "something",
 		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
 		Key:    "user-key",
@@ -241,7 +241,7 @@ func TestChannelSendsNextTimeOnAdd(t *testing.T) {
 	assert.Nil(t, err)
 	defer s.Close()
 
-	e := Entry{
+	e := &Entry{
 		Target: "something",
 		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
 	}
@@ -250,7 +250,7 @@ func TestChannelSendsNextTimeOnAdd(t *testing.T) {
 	next := <-s.C
 	assert.Equal(t, next, e.SendAt)
 
-	e2 := Entry{
+	e2 := &Entry{
 		Target: "something",
 		SendAt: time.Now().Add(time.Duration(1) * time.Minute),
 	}
@@ -265,7 +265,7 @@ func TestChannelSendNextTimeIfLater(t *testing.T) {
 	assert.Nil(t, err)
 	defer s.Close()
 
-	e := Entry{
+	e := &Entry{
 		Target: "something",
 		SendAt: time.Now().Add(time.Duration(1) * time.Minute),
 	}
@@ -274,7 +274,7 @@ func TestChannelSendNextTimeIfLater(t *testing.T) {
 	next := <-s.C
 	assert.Equal(t, next, e.SendAt)
 
-	e2 := Entry{
+	e2 := &Entry{
 		Target: "something",
 		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
 	}
@@ -289,7 +289,7 @@ func TestChannelSendsNextTimeOnRemove(t *testing.T) {
 	assert.Nil(t, err)
 	defer s.Close()
 
-	e := Entry{
+	e := &Entry{
 		Target: "something",
 		SendAt: time.Now().Add(time.Duration(100) * time.Minute),
 	}
@@ -298,7 +298,7 @@ func TestChannelSendsNextTimeOnRemove(t *testing.T) {
 	next := <-s.C
 	assert.Equal(t, next, e.SendAt)
 
-	e2 := Entry{
+	e2 := &Entry{
 		Target: "something",
 		SendAt: time.Now().Add(time.Duration(1) * time.Minute),
 	}

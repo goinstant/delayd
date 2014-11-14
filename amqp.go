@@ -185,7 +185,7 @@ func (a *AMQPReceiver) messageLoop() {
 				continue
 			}
 
-			entry := Entry{
+			entry := &Entry{
 				SendAt: time.Now().Add(time.Duration(delay) * time.Millisecond),
 			}
 
@@ -294,7 +294,7 @@ func NewAMQPSender(amqpURL string) (*AMQPSender, error) {
 
 // Send sends a delayd entry over , using the entry's Target as the publish
 // exchange.
-func (s *AMQPSender) Send(e Entry) error {
+func (s *AMQPSender) Send(e *Entry) error {
 	if e.AMQP == nil {
 		return errors.New("amqp: invalid entry")
 	}

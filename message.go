@@ -12,7 +12,7 @@ var mh codec.MsgpackHandle
 // Message represents a message with a broker-agnostic way.
 // It holds Entry object and also a broker-specific message manager.
 type Message struct {
-	Entry
+	*Entry
 	MessageDeliverer
 }
 
@@ -60,14 +60,17 @@ type AMQPMessage struct {
 }
 
 // entryFromBytes creates a new Entry based on the MessagePack encoded byte slice b.
-func entryFromBytes(b []byte) (e Entry, err error) {
+func entryFromBytes(b []byte) (*Entry, error) {
+	e := &Entry{}
 	dec := codec.NewDecoderBytes(b, &mh)
-	err = dec.Decode(&e)
-	return
+	if err := dec.Decode(e); err != nil {
+		return nil, err
+	}
+	return e, nil
 }
 
 // ToBytes encodes an Entry to a byte slice, encoding with MessagePack
-func (e Entry) ToBytes() (b []byte, err error) {
+func (e *Entry) ToBytes() (b []byte, err error) {
 	enc := codec.NewEncoderBytes(&b, &mh)
 	err = enc.Encode(e)
 	return

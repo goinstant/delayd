@@ -147,7 +147,7 @@ func (s *Storage) startTxn(readonly bool, open ...string) (*mdb.Txn, []mdb.DBI, 
 }
 
 // Add an Entry to the database.
-func (s *Storage) Add(uuid []byte, e Entry) error {
+func (s *Storage) Add(uuid []byte, e *Entry) error {
 	txn, dbis, err := s.startTxn(false, timeDB, entryDB, keyDB)
 	if err != nil {
 		return err
@@ -212,7 +212,7 @@ func (s *Storage) Add(uuid []byte, e Entry) error {
 	return nil
 }
 
-func (s *Storage) innerGet(t time.Time, all bool) ([][]byte, []Entry, error) {
+func (s *Storage) innerGet(t time.Time, all bool) ([][]byte, []*Entry, error) {
 	txn, dbis, err := s.startTxn(true, timeDB, entryDB)
 	if err != nil {
 		Error("storage: error creating transaction:", err)
@@ -231,7 +231,7 @@ func (s *Storage) innerGet(t time.Time, all bool) ([][]byte, []Entry, error) {
 	Debug("storage: looking for:", t, t.UnixNano())
 
 	uuids := [][]byte{}
-	entries := []Entry{}
+	entries := []*Entry{}
 	for {
 		k, uuid, err := cursor.Get(nil, mdb.NEXT)
 		if err == mdb.NotFound {
@@ -264,12 +264,12 @@ func (s *Storage) innerGet(t time.Time, all bool) ([][]byte, []Entry, error) {
 }
 
 // Get returns all entries that occur at or before the provided time
-func (s *Storage) Get(t time.Time) (uuids [][]byte, entries []Entry, err error) {
+func (s *Storage) Get(t time.Time) (uuids [][]byte, entries []*Entry, err error) {
 	return s.innerGet(t, false)
 }
 
 // GetAll returns every entry in storage
-func (s *Storage) GetAll() (uuids [][]byte, entries []Entry, err error) {
+func (s *Storage) GetAll() (uuids [][]byte, entries []*Entry, err error) {
 	return s.innerGet(time.Now(), true)
 }
 
